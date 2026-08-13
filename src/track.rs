@@ -28,7 +28,9 @@ pub async fn get_tracks(spotify_ids: Vec<String>, session: &Session) -> Result<V
         tracing::debug!("Getting tracks for: {}", id);
         let uri: SpotifyUri = parse_uri_or_url(&id).ok_or(anyhow::anyhow!("Invalid track"))?;
         let new_tracks = match uri {
-            SpotifyUri::Track { .. } | SpotifyUri::Episode { .. } => vec![Track { uri: uri.clone() }],
+            SpotifyUri::Track { .. } | SpotifyUri::Episode { .. } => {
+                vec![Track { uri: uri.clone() }]
+            }
             SpotifyUri::Album { id } => Album::from_id(id).get_tracks(session).await,
             SpotifyUri::Playlist { id, .. } => Playlist::from_id(id).get_tracks(session).await,
             _ => {
@@ -64,7 +66,7 @@ fn parse_url(track_url: &str) -> Option<SpotifyUri> {
 
 #[derive(Clone, Debug)]
 pub struct Track {
-    pub uri: SpotifyUri
+    pub uri: SpotifyUri,
 }
 
 lazy_static! {
@@ -77,7 +79,7 @@ impl Track {
         let uri = parse_uri_or_url(track)
             .map(|uri| match uri {
                 SpotifyUri::Album { .. } => Some(uri),
-                _ => None
+                _ => None,
             })
             .unwrap()
             .ok_or(anyhow::anyhow!("Invalid track"))?;
@@ -140,7 +142,7 @@ impl Album {
         let id = parse_uri_or_url(album)
             .map(|uri| match uri {
                 SpotifyUri::Album { id } => Some(id),
-                _ => None
+                _ => None,
             })
             .unwrap()
             .ok_or(anyhow::anyhow!("Invalid album"))?;
@@ -162,10 +164,11 @@ impl TrackCollection for Album {
         let album = librespot::metadata::Album::get(session, &SpotifyUri::Album { id: self.id })
             .await
             .expect("Failed to get album");
-        album.tracks()
+        album
+            .tracks()
             .filter_map(|uri| match uri {
                 SpotifyUri::Album { .. } => Some(Track { uri: uri.clone() }),
-                _ => None
+                _ => None,
             })
             .collect()
     }
@@ -182,7 +185,9 @@ impl Playlist {
     }
 
     pub fn from_id(id: SpotifyId) -> Self {
-        Playlist { uri: SpotifyUri::Playlist { user: None, id } }
+        Playlist {
+            uri: SpotifyUri::Playlist { user: None, id },
+        }
     }
 
     pub async fn is_playlist(id: SpotifyUri, session: &Session) -> bool {
@@ -202,7 +207,7 @@ impl TrackCollection for Playlist {
             .tracks()
             .filter_map(|uri| match uri {
                 SpotifyUri::Track { .. } => Some(Track { uri: uri.clone() }),
-                _ => None
+                _ => None,
             })
             .collect()
     }

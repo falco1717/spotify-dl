@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::io::Write as IoWrite;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,10 +33,17 @@ pub struct DownloadOptions {
     pub parallel: usize,
     pub format: Format,
     pub force: bool,
+    pub machine_readable: bool,
 }
 
 impl DownloadOptions {
-    pub fn new(destination: Option<String>, parallel: usize, format: Format, force: bool) -> Self {
+    pub fn new(
+        destination: Option<String>,
+        parallel: usize,
+        format: Format,
+        force: bool,
+        machine_readable: bool,
+    ) -> Self {
         let destination =
             destination.map_or_else(|| std::env::current_dir().unwrap(), PathBuf::from);
         DownloadOptions {
@@ -43,6 +51,7 @@ impl DownloadOptions {
             parallel,
             format,
             force,
+            machine_readable,
         }
     }
 }
@@ -60,6 +69,11 @@ impl Downloader {
         tracks: Vec<Track>,
         options: &DownloadOptions,
     ) -> Result<()> {
+        emit_machine_event(
+            options.machine_readable,
+            "QUEUE",
+            &[tracks.len().to_string()],
+        );
         futures::stream::iter(tracks)
             .map(|track| self.download_track(track, options))
             .buffer_unordered(options.parallel)
@@ -73,6 +87,7 @@ impl Downloader {
     async fn download_track(&self, track: Track, options: &DownloadOptions) -> Result<()> {
         let metadata = track.metadata(&self.session).await?;
         tracing::info!("Downloading track: {:?}", metadata.track_name);
+        let display_name = metadata.to_string();
 
         let path = options
             .destination
@@ -87,8 +102,15 @@ impl Downloader {
                 "Skipping {}, file already exists. Use --force to force re-downloading the track",
                 &metadata.track_name
             );
+            emit_machine_event(options.machine_readable, "ITEM_SKIP", &[display_name]);
             return Ok(());
         }
+
+        emit_machine_event(
+            options.machine_readable,
+            "ITEM_START",
+            &[display_name.clone(), metadata.approx_size().to_string()],
+        );
 
         let pb = self.add_progress_bar(&metadata);
 
@@ -96,26 +118,39 @@ impl Downloader {
         let channel = match stream.stream(Arc::new(track)).await {
             Ok(channel) => channel,
             Err(e) => {
-                self.fail_with_error(&pb, &metadata.to_string(), e.to_string());
+                self.fail_with_error(&pb, &display_name, e.to_string(), options.machine_readable);
                 return Ok(());
             }
         };
 
-        let samples = match self.buffer_track(channel, &pb, &metadata).await {
+        let samples = match self
+            .buffer_track(channel, &pb, &metadata, options.machine_readable)
+            .await
+        {
             Ok(samples) => samples,
             Err(e) => {
-                self.fail_with_error(&pb, &metadata.to_string(), e.to_string());
+                self.fail_with_error(&pb, &display_name, e.to_string(), options.machine_readable);
                 return Ok(());
             }
         };
 
         tracing::info!("Encoding track: {}", metadata.to_string());
         pb.set_message(format!("Encoding {}", metadata.to_string()));
+        emit_machine_event(
+            options.machine_readable,
+            "ITEM_STAGE",
+            &[display_name.clone(), "encoding".to_string()],
+        );
 
         let encoder = crate::encoder::get_encoder(options.format);
         let stream = encoder.encode(samples).await?;
 
         pb.set_message(format!("Writing {}", metadata.to_string()));
+        emit_machine_event(
+            options.machine_readable,
+            "ITEM_STAGE",
+            &[display_name.clone(), "writing".to_string()],
+        );
         tracing::info!(
             "Writing track: {:?} to file: {}",
             metadata.to_string(),
@@ -127,6 +162,7 @@ impl Downloader {
         encoder::tags::store_tags(path, &tags, options.format).await?;
 
         pb.finish_with_message(format!("Downloaded {}", metadata.to_string()));
+        emit_machine_event(options.machine_readable, "ITEM_DONE", &[display_name]);
         Ok(())
     }
 
@@ -149,8 +185,10 @@ impl Downloader {
         mut rx: StreamEventChannel,
         pb: &ProgressBar,
         metadata: &TrackMetadata,
+        machine_readable: bool,
     ) -> Result<Samples> {
         let mut samples = Vec::<i32>::new();
+        let mut last_reported_percent: Option<usize> = None;
         while let Some(event) = rx.recv().await {
             match event {
                 StreamEvent::Write {
@@ -160,6 +198,24 @@ impl Downloader {
                 } => {
                     tracing::trace!("Written {} bytes out of {}", bytes, total);
                     pb.set_position(bytes as u64);
+                    let percent = if total == 0 {
+                        0
+                    } else {
+                        bytes.saturating_mul(100) / total
+                    };
+                    if last_reported_percent != Some(percent) {
+                        emit_machine_event(
+                            machine_readable,
+                            "ITEM_PROGRESS",
+                            &[
+                                metadata.to_string(),
+                                percent.to_string(),
+                                bytes.to_string(),
+                                total.to_string(),
+                            ],
+                        );
+                        last_reported_percent = Some(percent);
+                    }
                     samples.append(&mut content);
                 }
                 StreamEvent::Finished => {
@@ -186,6 +242,15 @@ impl Downloader {
                         max_attempts,
                         metadata.to_string()
                     ));
+                    emit_machine_event(
+                        machine_readable,
+                        "ITEM_RETRY",
+                        &[
+                            metadata.to_string(),
+                            attempt.to_string(),
+                            max_attempts.to_string(),
+                        ],
+                    );
                 }
             }
         }
@@ -195,11 +260,52 @@ impl Downloader {
         })
     }
 
-    fn fail_with_error<S>(&self, pb: &ProgressBar, name: &str, e: S)
+    fn fail_with_error<S>(&self, pb: &ProgressBar, name: &str, e: S, machine_readable: bool)
     where
         S: Into<String>,
     {
-        tracing::error!("Failed to download {}: {}", name, e.into());
-        pb.finish_with_message(console::style(format!("Failed! {}", name)).red().to_string());
+        let error = e.into();
+        tracing::error!("Failed to download {}: {}", name, error);
+        emit_machine_event(machine_readable, "ITEM_ERROR", &[name.to_string(), error]);
+        pb.finish_with_message(
+            console::style(format!("Failed! {}", name))
+                .red()
+                .to_string(),
+        );
+    }
+}
+
+fn emit_machine_event(enabled: bool, kind: &str, fields: &[String]) {
+    if !enabled {
+        return;
+    }
+    println!("{}", format_machine_event(kind, fields));
+    let _ = std::io::stdout().flush();
+}
+
+fn format_machine_event(kind: &str, fields: &[String]) -> String {
+    let mut event = sanitize_machine_field(kind);
+    for field in fields {
+        event.push('\t');
+        event.push_str(&sanitize_machine_field(field));
+    }
+    event
+}
+
+fn sanitize_machine_field(value: &str) -> String {
+    value.replace(['\t', '\r', '\n'], " ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_machine_event;
+
+    #[test]
+    fn machine_events_are_single_line_and_tab_delimited() {
+        let event = format_machine_event(
+            "ITEM_PROGRESS",
+            &["Artist\tTitle\nLive".to_string(), "42".to_string()],
+        );
+        assert_eq!(event, "ITEM_PROGRESS\tArtist Title Live\t42");
     }
 }

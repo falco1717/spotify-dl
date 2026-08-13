@@ -40,7 +40,7 @@ impl Stream {
             Box::new(NoOpVolume),
             move || Box::new(sink),
         );
-        
+
         tokio::spawn(async move {
             match tryhard::retry_fn(|| async { Self::load(player.clone(), &track.clone()).await })
                 .retries(3)
@@ -55,10 +55,14 @@ impl Stream {
                             cloned_track,
                             error
                         );
-                        Self::send_event(&tx, StreamEvent::Retry {
-                            attempt: attempt as usize,
-                            max_attempts: 3,
-                        }).await;
+                        Self::send_event(
+                            &tx,
+                            StreamEvent::Retry {
+                                attempt: attempt as usize,
+                                max_attempts: 3,
+                            },
+                        )
+                        .await;
                     }
                 })
                 .exponential_backoff(Duration::from_secs(10))

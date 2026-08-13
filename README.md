@@ -39,6 +39,21 @@ cargo install --git https://github.com/GuillemCastro/spotify-dl.git
 
 ## 🧭 Usage
 
+Sign in securely through Spotify in your browser:
+
+```sh
+spotify-dl --login
+```
+
+Check or clear the locally cached session:
+
+```sh
+spotify-dl --auth-status
+spotify-dl --logout
+```
+
+Spotify credentials are cached under `~/.spotify-dl`. The application never accepts or stores a Spotify password directly.
+
 ```
 spotify-dl 0.9.0
 A commandline utility to download music directly from Spotify
