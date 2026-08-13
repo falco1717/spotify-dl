@@ -22,6 +22,9 @@ use crate::stream::StreamEventChannel;
 use crate::track::Track;
 use crate::track::TrackMetadata;
 
+const MAX_TRACK_RETRIES: usize = 3;
+const RETRY_PAUSE: Duration = Duration::from_secs(5 * 60);
+
 pub struct Downloader {
     session: Session,
     progress_bar: MultiProgress,
@@ -115,23 +118,66 @@ impl Downloader {
 
         let pb = self.add_progress_bar(&metadata);
 
-        let stream = Stream::new(self.session.clone());
-        let channel = match stream.stream(Arc::new(track)).await {
-            Ok(channel) => channel,
-            Err(e) => {
-                self.fail_with_error(&pb, &display_name, e.to_string(), options.machine_readable);
-                return Ok(());
-            }
-        };
+        let mut retry = 0;
+        let samples = loop {
+            let session = if retry == 0 {
+                Ok(self.session.clone())
+            } else {
+                crate::session::create_session().await
+            };
+            let result = match session {
+                Ok(session) => match Stream::new(session).stream(Arc::new(track.clone())).await {
+                    Ok(channel) => {
+                        self.buffer_track(channel, &pb, &metadata, options.machine_readable)
+                            .await
+                    }
+                    Err(error) => Err(error),
+                },
+                Err(error) => Err(error),
+            };
 
-        let samples = match self
-            .buffer_track(channel, &pb, &metadata, options.machine_readable)
-            .await
-        {
-            Ok(samples) => samples,
-            Err(e) => {
-                self.fail_with_error(&pb, &display_name, e.to_string(), options.machine_readable);
-                return Ok(());
+            match result {
+                Ok(samples) => break samples,
+                Err(error) if retry < MAX_TRACK_RETRIES => {
+                    retry += 1;
+                    tracing::warn!(
+                        "Track attempt failed; waiting {} seconds before retry {} of {}: {} ({})",
+                        RETRY_PAUSE.as_secs(),
+                        retry,
+                        MAX_TRACK_RETRIES,
+                        display_name,
+                        error
+                    );
+                    pb.set_message(format!(
+                        "Waiting 5 minutes before retry ({}/{}) {}",
+                        retry, MAX_TRACK_RETRIES, display_name
+                    ));
+                    emit_machine_event(
+                        options.machine_readable,
+                        "ITEM_RETRY",
+                        &[
+                            display_name.clone(),
+                            retry.to_string(),
+                            MAX_TRACK_RETRIES.to_string(),
+                            RETRY_PAUSE.as_secs().to_string(),
+                        ],
+                    );
+                    tokio::time::sleep(RETRY_PAUSE).await;
+                    emit_machine_event(
+                        options.machine_readable,
+                        "ITEM_RETRY_RESUME",
+                        &[display_name.clone(), retry.to_string()],
+                    );
+                }
+                Err(error) => {
+                    self.fail_with_error(
+                        &pb,
+                        &display_name,
+                        error.to_string(),
+                        options.machine_readable,
+                    );
+                    return Ok(());
+                }
             }
         };
 
@@ -227,34 +273,6 @@ impl Downloader {
                     tracing::error!("Error while streaming track: {:?}", stream_error);
                     return Err(anyhow::anyhow!("Streaming error: {:?}", stream_error));
                 }
-                StreamEvent::Retry {
-                    attempt,
-                    max_attempts,
-                    delay_seconds,
-                } => {
-                    tracing::warn!(
-                        "Retrying download, attempt {} of {}: {}",
-                        attempt,
-                        max_attempts,
-                        metadata.to_string()
-                    );
-                    pb.set_message(format!(
-                        "Waiting 5 minutes before retry ({}/{}) {}",
-                        attempt,
-                        max_attempts,
-                        metadata.to_string()
-                    ));
-                    emit_machine_event(
-                        machine_readable,
-                        "ITEM_RETRY",
-                        &[
-                            metadata.to_string(),
-                            attempt.to_string(),
-                            max_attempts.to_string(),
-                            delay_seconds.to_string(),
-                        ],
-                    );
-                }
             }
         }
         Ok(Samples {
@@ -305,7 +323,7 @@ fn output_path(destination: &std::path::Path, name: &str, extension: &str) -> Pa
 
 #[cfg(test)]
 mod tests {
-    use super::{format_machine_event, output_path};
+    use super::{MAX_TRACK_RETRIES, RETRY_PAUSE, format_machine_event, output_path};
 
     #[test]
     fn machine_events_are_single_line_and_tab_delimited() {
@@ -327,5 +345,11 @@ mod tests {
             output_path(destination, "V.I.C. - Wobble", "mp3"),
             destination.join("V.I.C. - Wobble.mp3")
         );
+    }
+
+    #[test]
+    fn retry_policy_uses_fresh_attempts_after_five_minutes() {
+        assert_eq!(MAX_TRACK_RETRIES, 3);
+        assert_eq!(RETRY_PAUSE.as_secs(), 300);
     }
 }

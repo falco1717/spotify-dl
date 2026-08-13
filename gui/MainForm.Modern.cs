@@ -261,6 +261,7 @@ public sealed class MainForm : Form
             case "ITEM_PROGRESS" when fields.Length >= 3 && int.TryParse(fields[2], out var percent): StopCountdown(); itemProgress.Value = Math.Clamp(percent, 0, 100); if (percent == 100 || percent % 5 == 0) AppendOutput($"{percent,3}%    {fields[1]}", Color.FromArgb(164, 176, 169)); break;
             case "ITEM_STAGE" when fields.Length >= 3: AppendOutput($"{fields[2].ToUpperInvariant(),-7} {fields[1]}", Color.FromArgb(224, 190, 113)); break;
             case "ITEM_RETRY" when fields.Length >= 5 && int.TryParse(fields[4], out var retryDelay): currentItemLabel.Text = fields[1]; itemProgress.Value = 0; StartCountdown(retryDelay, "Retrying in"); AppendOutput($"RETRY   {fields[2]}/{fields[3]} — waiting {FormatDuration(retryDelay)} — {fields[1]}", Color.FromArgb(244, 180, 88)); break;
+            case "ITEM_RETRY_RESUME" when fields.Length >= 3: StopCountdown(); currentItemLabel.Text = fields[1]; statusLabel.Text = "Reconnecting and retrying…"; AppendOutput($"RESUME  Retry {fields[2]} — new Spotify connection — {fields[1]}", Primary); break;
             case "ITEM_SKIP" when fields.Length >= 2: AppendOutput($"SKIP    {fields[1]}", TextMuted); break;
             case "ITEM_DONE" when fields.Length >= 2: itemProgress.Value = 100; AppendOutput($"DONE    {fields[1]}", Primary); break;
             case "ITEM_ERROR" when fields.Length >= 3: AppendOutput($"FAILED  {fields[1]} — {fields[2]}", Color.FromArgb(244, 112, 112)); break;

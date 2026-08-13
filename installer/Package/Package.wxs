@@ -1,7 +1,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Spotify DL"
            Manufacturer="falco1717"
-           Version="0.3.6"
+           Version="0.3.7"
            UpgradeCode="20A020D2-ABBF-4EDB-8EC0-6AA3A36E1C3F"
            Scope="perMachine">
     <MajorUpgrade DowngradeErrorMessage="A newer version of Spotify DL is already installed." />

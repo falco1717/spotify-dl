@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.7-gui] - 2026-08-13
+
+- Reconnect the Spotify session and construct a fresh librespot player after every five-minute retry countdown instead of reusing a failed player instance.
+- Report the actual retry resumption in the GUI activity feed.
+
 ## [0.3.6-gui] - 2026-08-13
 
 - Preserve dotted artist/title names when adding the audio extension, preventing distinct tracks such as `V.I.C. - Get Silly` and `V.I.C. - Wobble` from overwriting one another.

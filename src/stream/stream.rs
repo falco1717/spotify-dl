@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Result;
 use librespot::core::Session;
@@ -12,21 +11,9 @@ use crate::stream::channel_sink::{ChannelSink, SinkEvent};
 use crate::stream::{StreamError, StreamEvent, StreamEventChannel};
 use crate::track::Track;
 
-const RETRY_PAUSE: Duration = Duration::from_secs(5 * 60);
-
 pub struct Stream {
     player_config: PlayerConfig,
     session: Session,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::RETRY_PAUSE;
-
-    #[test]
-    fn every_retry_waits_five_minutes() {
-        assert_eq!(RETRY_PAUSE.as_secs(), 300);
-    }
 }
 
 impl Stream {
@@ -54,33 +41,7 @@ impl Stream {
         );
 
         tokio::spawn(async move {
-            match tryhard::retry_fn(|| async { Self::load(player.clone(), &track.clone()).await })
-                .retries(3)
-                .on_retry(|attempt, _, e| {
-                    let error = format!("{}", e);
-                    let tx = tx.clone();
-                    let cloned_track = track.clone();
-                    async move {
-                        tracing::warn!(
-                            "Attempt {} to load track {:?} failed: {}",
-                            attempt,
-                            cloned_track,
-                            error
-                        );
-                        Self::send_event(
-                            &tx,
-                            StreamEvent::Retry {
-                                attempt: attempt as usize,
-                                max_attempts: 3,
-                                delay_seconds: RETRY_PAUSE.as_secs(),
-                            },
-                        )
-                        .await;
-                    }
-                })
-                .fixed_backoff(RETRY_PAUSE)
-                .await
-            {
+            match Self::load(player.clone(), &track).await {
                 Ok(_) => tracing::info!("Track loaded successfully: {:?}", track.uri),
                 Err(e) => {
                     tracing::error!("Failed to load track: {:?}, error: {:?}", track.uri, e);
