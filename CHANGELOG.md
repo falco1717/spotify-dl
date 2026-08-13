@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.5-gui] - 2026-08-13
+
+- Increase the pause before every track-load retry from three minutes to five minutes.
+- Derive the GUI activity message and live countdown from the CLI-provided retry duration.
+
 ## [0.3.4-gui] - 2026-08-13
 
 - Remove scheduled 28-track playlist cooldowns so queues continue without arbitrary pauses.

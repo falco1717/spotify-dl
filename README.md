@@ -13,7 +13,7 @@ A command line utility to download songs, podcasts, playlists and albums directl
 - Download individual tracks, podcasts, playlists or full albums.
 - Built with Rust for speed and efficiency.
 - Supports metadata tagging and organized file output.
-- Waits three minutes before every retry after a track load failure.
+- Waits five minutes before every retry after a track load failure.
 
 ## ⚙️ Installation
 

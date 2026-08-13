@@ -12,7 +12,7 @@ use crate::stream::channel_sink::{ChannelSink, SinkEvent};
 use crate::stream::{StreamError, StreamEvent, StreamEventChannel};
 use crate::track::Track;
 
-const RETRY_PAUSE: Duration = Duration::from_secs(3 * 60);
+const RETRY_PAUSE: Duration = Duration::from_secs(5 * 60);
 
 pub struct Stream {
     player_config: PlayerConfig,
@@ -24,8 +24,8 @@ mod tests {
     use super::RETRY_PAUSE;
 
     #[test]
-    fn every_retry_waits_three_minutes() {
-        assert_eq!(RETRY_PAUSE.as_secs(), 180);
+    fn every_retry_waits_five_minutes() {
+        assert_eq!(RETRY_PAUSE.as_secs(), 300);
     }
 }
 

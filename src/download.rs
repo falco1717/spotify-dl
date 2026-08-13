@@ -238,7 +238,7 @@ impl Downloader {
                         metadata.to_string()
                     );
                     pb.set_message(format!(
-                        "Waiting 3 minutes before retry ({}/{}) {}",
+                        "Waiting 5 minutes before retry ({}/{}) {}",
                         attempt,
                         max_attempts,
                         metadata.to_string()
