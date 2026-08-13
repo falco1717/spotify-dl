@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.4-gui] - 2026-08-13
+
+- Remove scheduled 28-track playlist cooldowns so queues continue without arbitrary pauses.
+- Retain the three-minute countdown only for actual track-load retries.
+
 ## [0.3.3-gui] - 2026-08-13
 
 - Show live `M:SS` countdowns during retry and playlist cooldown pauses.

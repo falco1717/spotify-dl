@@ -2,11 +2,9 @@
 
 A native Windows frontend for this fork of `spotify-dl`. It provides browser-based Spotify login, URL and destination fields, format selection, cancellation, and per-item download progress without requiring command-line use.
 
-Large playlists and albums download in groups of 28 tracks with a three-minute cooldown between groups. The activity feed reports each pause and resume.
-
 If a track load fails, the downloader pauses in place for three minutes before each retry and reports the wait in the activity feed.
 
-The status line counts each cooldown down once per second. While a download is active, the Download button becomes a red Cancel button and returns to Download when the process exits.
+The status line counts each retry wait down once per second. While a download is active, the Download button becomes a red Cancel button and returns to Download when the process exits.
 
 ## Run from source
 
