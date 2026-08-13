@@ -18,8 +18,12 @@ public sealed class MainForm : Form
     private readonly TextBox urlBox = new();
     private readonly TextBox destinationBox = new();
     private readonly ComboBox formatBox = new();
+    private readonly ComboBox speedBox = new();
+    private readonly NumericUpDown customParallelBox = new();
     private readonly CheckBox playlistTrackNumbersBox = new();
+    private readonly CheckBox playlistSyncBox = new();
     private readonly Button browseButton = new();
+    private readonly Button resetHistoryButton = new();
     private readonly Button downloadButton = new();
     private readonly Button accountButton = new();
     private readonly RichTextBox outputBox = new();
@@ -128,14 +132,45 @@ public sealed class MainForm : Form
         formatBox.FlatStyle = FlatStyle.Flat;
         formatBox.Font = new Font("Segoe UI Semibold", 10F);
         formatBox.Margin = new Padding(0, 4, 12, 0);
+        speedBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        speedBox.Items.AddRange(["Normal", "Turbo (5)", "Custom"]);
+        speedBox.SelectedIndex = 1;
+        speedBox.Width = 112;
+        speedBox.BackColor = Input;
+        speedBox.ForeColor = TextPrimary;
+        speedBox.FlatStyle = FlatStyle.Flat;
+        speedBox.Font = new Font("Segoe UI Semibold", 10F);
+        speedBox.Margin = new Padding(0, 4, 12, 0);
+        speedBox.SelectedIndexChanged += (_, _) => customParallelBox.Visible = speedBox.SelectedIndex == 2;
+        customParallelBox.Minimum = 1;
+        customParallelBox.Maximum = 20;
+        customParallelBox.Value = 5;
+        customParallelBox.Width = 54;
+        customParallelBox.BackColor = Input;
+        customParallelBox.ForeColor = TextPrimary;
+        customParallelBox.Margin = new Padding(0, 5, 12, 0);
+        customParallelBox.Visible = false;
         playlistTrackNumbersBox.Text = "Use playlist order as track #";
         playlistTrackNumbersBox.AutoSize = true;
         playlistTrackNumbersBox.ForeColor = TextMuted;
         playlistTrackNumbersBox.Font = new Font("Segoe UI", 9.5F);
         playlistTrackNumbersBox.Margin = new Padding(0, 10, 16, 0);
+        playlistSyncBox.Text = "Playlist sync";
+        playlistSyncBox.AutoSize = true;
+        playlistSyncBox.ForeColor = TextMuted;
+        playlistSyncBox.Font = new Font("Segoe UI", 9.5F);
+        playlistSyncBox.Margin = new Padding(0, 10, 12, 0);
+        StyleButton(resetHistoryButton, false);
+        resetHistoryButton.Text = "Reset history";
+        resetHistoryButton.MinimumSize = new Size(96, 38);
+        resetHistoryButton.Click += async (_, _) => await ResetSyncHistoryAsync();
         row.Controls.Add(downloadButton);
         row.Controls.Add(formatBox);
+        row.Controls.Add(speedBox);
+        row.Controls.Add(customParallelBox);
         row.Controls.Add(playlistTrackNumbersBox);
+        row.Controls.Add(playlistSyncBox);
+        row.Controls.Add(resetHistoryButton);
         return row;
     }
 
@@ -238,7 +273,10 @@ public sealed class MainForm : Form
         itemProgress.Value = 0;
         statusLabel.Text = "Downloading…";
         var startInfo = NewCliStartInfo(executable);
-        foreach (var argument in new[] { "--destination", destination, "--format", formatBox.SelectedItem?.ToString() ?? "flac", "--machine-readable", url }) startInfo.ArgumentList.Add(argument);
+        var parallel = speedBox.SelectedIndex switch { 0 => 1, 2 => (int)customParallelBox.Value, _ => 5 };
+        foreach (var argument in new[] { "--destination", destination, "--format", formatBox.SelectedItem?.ToString() ?? "flac", "--parallel", parallel.ToString(), "--machine-readable", url }) startInfo.ArgumentList.Add(argument);
+        if (speedBox.SelectedIndex == 0) startInfo.ArgumentList.Insert(startInfo.ArgumentList.Count - 1, "--realistic-delay");
+        if (playlistSyncBox.Checked) startInfo.ArgumentList.Insert(startInfo.ArgumentList.Count - 1, "--playlist-sync");
         if (playlistTrackNumbersBox.Checked) startInfo.ArgumentList.Insert(startInfo.ArgumentList.Count - 1, "--playlist-track-numbers");
         try
         {
@@ -271,6 +309,9 @@ public sealed class MainForm : Form
             case "ITEM_RETRY" when fields.Length >= 5 && int.TryParse(fields[4], out var retryDelay): currentItemLabel.Text = fields[1]; itemProgress.Value = 0; StartCountdown(retryDelay, "Retrying in"); AppendOutput($"RETRY   {fields[2]}/{fields[3]} — waiting {FormatDuration(retryDelay)} — {fields[1]}", Color.FromArgb(244, 180, 88)); break;
             case "ITEM_RETRY_RESUME" when fields.Length >= 3: StopCountdown(); currentItemLabel.Text = fields[1]; statusLabel.Text = "Reconnecting and retrying…"; AppendOutput($"RESUME  Retry {fields[2]} — new Spotify connection — {fields[1]}", Primary); break;
             case "ITEM_SKIP" when fields.Length >= 2: AppendOutput($"SKIP    {fields[1]}", TextMuted); break;
+            case "ITEM_SYNC_SKIP" when fields.Length >= 2: AppendOutput($"SYNC    Already downloaded — {fields[1]}", TextMuted); break;
+            case "ITEM_UNAVAILABLE" when fields.Length >= 2: AppendOutput($"SKIP    Unavailable — {fields[1]}", Color.FromArgb(244, 180, 88)); break;
+            case "PACING_WAIT" when fields.Length >= 3 && int.TryParse(fields[2], out var pacingDelay): StartCountdown(pacingDelay, "Normal-mode pause"); AppendOutput($"PACE    Waiting {FormatDuration(pacingDelay)} — {fields[1]}", TextMuted); break;
             case "ITEM_DONE" when fields.Length >= 2: itemProgress.Value = 100; AppendOutput($"DONE    {fields[1]}", Primary); break;
             case "ITEM_ERROR" when fields.Length >= 3: AppendOutput($"FAILED  {fields[1]} — {fields[2]}", Color.FromArgb(244, 112, 112)); break;
             default: AppendOutput(line, TextMuted); break;
@@ -310,6 +351,30 @@ public sealed class MainForm : Form
         finally { activeProcess?.Dispose(); activeProcess = null; SetRunning(false); }
     }
 
+    private async Task ResetSyncHistoryAsync()
+    {
+        var destination = destinationBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(destination)) { ShowValidation("Choose the folder whose sync history should be reset.", destinationBox); return; }
+        if (MessageBox.Show(this, $"Reset playlist sync history in:\n{destination}?\n\nDownloaded music will not be deleted.", "Reset sync history", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        var executable = FindSpotifyDl();
+        if (executable is null) { ShowMissingCli(); return; }
+        SetRunning(true);
+        try
+        {
+            using var process = new Process { StartInfo = NewCliStartInfo(executable) };
+            process.StartInfo.ArgumentList.Add("--destination");
+            process.StartInfo.ArgumentList.Add(destination);
+            process.StartInfo.ArgumentList.Add("--reset-sync-history");
+            process.Start();
+            var output = await process.StandardOutput.ReadToEndAsync();
+            var error = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            AppendOutput(process.ExitCode == 0 ? "SYNC    Playlist history reset" : $"FAILED  {error.Trim()}", process.ExitCode == 0 ? Primary : Color.FromArgb(244, 112, 112));
+        }
+        catch (Exception ex) { AppendOutput(ex.Message, Color.FromArgb(244, 112, 112)); }
+        finally { SetRunning(false); }
+    }
+
     private static ProcessStartInfo NewCliStartInfo(string executable) => new() { FileName = executable, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
     private void SetAuthState(bool loggedIn) { isLoggedIn = loggedIn; accountStatusLabel.Text = loggedIn ? "Signed in" : "Not signed in"; accountStatusLabel.ForeColor = loggedIn ? Primary : TextMuted; accountButton.Text = loggedIn ? "Log out" : "Log in"; accountButton.Enabled = activeProcess is null; }
     private static string? FindSpotifyDl()
@@ -322,7 +387,7 @@ public sealed class MainForm : Form
         return null;
     }
     private void CancelDownload() { if (activeProcess is not { HasExited: false }) return; cancellationRequested = true; StopCountdown(); downloadButton.Enabled = false; downloadButton.Text = "Cancelling…"; activeProcess.Kill(true); statusLabel.Text = "Cancelling…"; AppendOutput("CANCEL  Download stopping", Color.FromArgb(244, 180, 88)); }
-    private void SetRunning(bool running, bool cancellable = false) { isDownloadRunning = running && cancellable; downloadButton.Text = isDownloadRunning ? "Cancel" : "Download"; downloadButton.BackColor = isDownloadRunning ? Color.FromArgb(190, 65, 65) : Primary; downloadButton.ForeColor = isDownloadRunning ? Color.White : Color.FromArgb(7, 24, 13); downloadButton.Enabled = !running || cancellable; AcceptButton = running ? null : downloadButton; urlBox.Enabled = !running; destinationBox.Enabled = !running; browseButton.Enabled = !running; formatBox.Enabled = !running; playlistTrackNumbersBox.Enabled = !running; accountButton.Enabled = !running; }
+    private void SetRunning(bool running, bool cancellable = false) { isDownloadRunning = running && cancellable; downloadButton.Text = isDownloadRunning ? "Cancel" : "Download"; downloadButton.BackColor = isDownloadRunning ? Color.FromArgb(190, 65, 65) : Primary; downloadButton.ForeColor = isDownloadRunning ? Color.White : Color.FromArgb(7, 24, 13); downloadButton.Enabled = !running || cancellable; AcceptButton = running ? null : downloadButton; urlBox.Enabled = !running; destinationBox.Enabled = !running; browseButton.Enabled = !running; formatBox.Enabled = !running; speedBox.Enabled = !running; customParallelBox.Enabled = !running; playlistSyncBox.Enabled = !running; resetHistoryButton.Enabled = !running; playlistTrackNumbersBox.Enabled = !running; accountButton.Enabled = !running; }
     private void StartCountdown(int seconds, string prefix) { countdownSeconds = Math.Max(0, seconds); countdownPrefix = prefix; UpdateCountdown(); countdownTimer.Start(); }
     private static string FormatDuration(int seconds) => seconds % 60 == 0 ? $"{seconds / 60} minute{(seconds == 60 ? "" : "s")}" : $"{seconds} seconds";
     private void UpdateCountdown() { var minutes = countdownSeconds / 60; var seconds = countdownSeconds % 60; statusLabel.Text = countdownSeconds > 0 ? $"{countdownPrefix} {minutes}:{seconds:00}" : "Resuming…"; if (countdownSeconds <= 0) countdownTimer.Stop(); }
@@ -333,9 +398,9 @@ public sealed class MainForm : Form
     private void HandleDragEnter(object? sender, DragEventArgs e) { if (e.Data?.GetDataPresent(DataFormats.Text) == true) e.Effect = DragDropEffects.Copy; }
     private void HandleDragDrop(object? sender, DragEventArgs e) { if (e.Data?.GetData(DataFormats.Text) is string text) urlBox.Text = text.Trim(); }
     private static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpotifyDlGui", "settings.json");
-    private void LoadSettings() { try { if (!File.Exists(SettingsPath)) { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); return; } var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)); destinationBox.Text = settings?.Destination ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); if (settings?.Format is string format && formatBox.Items.Contains(format)) formatBox.SelectedItem = format; playlistTrackNumbersBox.Checked = settings?.PlaylistTrackNumbers ?? false; } catch { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); } }
-    private void SaveSettings() { try { Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new AppSettings(destinationBox.Text.Trim(), formatBox.SelectedItem?.ToString() ?? "flac", playlistTrackNumbersBox.Checked))); } catch { } }
-    private sealed record AppSettings(string Destination, string Format, bool PlaylistTrackNumbers = false);
+    private void LoadSettings() { try { if (!File.Exists(SettingsPath)) { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); return; } var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)); destinationBox.Text = settings?.Destination ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); urlBox.Text = settings?.LastUrl ?? ""; if (settings?.Format is string format && formatBox.Items.Contains(format)) formatBox.SelectedItem = format; playlistTrackNumbersBox.Checked = settings?.PlaylistTrackNumbers ?? false; playlistSyncBox.Checked = settings?.PlaylistSync ?? false; speedBox.SelectedIndex = Math.Clamp(settings?.SpeedMode ?? 1, 0, 2); customParallelBox.Value = Math.Clamp(settings?.CustomParallel ?? 5, 1, 20); } catch { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); } }
+    private void SaveSettings() { try { Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new AppSettings(destinationBox.Text.Trim(), formatBox.SelectedItem?.ToString() ?? "flac", playlistTrackNumbersBox.Checked, urlBox.Text.Trim(), playlistSyncBox.Checked, speedBox.SelectedIndex, (int)customParallelBox.Value))); } catch { } }
+    private sealed record AppSettings(string Destination, string Format, bool PlaylistTrackNumbers = false, string LastUrl = "", bool PlaylistSync = false, int SpeedMode = 1, int CustomParallel = 5);
 }
 
 internal sealed class RoundedPanel : TableLayoutPanel

@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.9-gui] - 2026-08-13
+
+- Add opt-in per-folder playlist sync history and a reset-history action.
+- Remember the last Spotify URL in the GUI.
+- Add Normal, Turbo (5), and custom parallel speed controls.
+- Skip unavailable tracks without stopping the remaining playlist.
+
 ## [0.3.8-gui] - 2026-08-13
 
 - Add optional `--playlist-track-numbers` tagging that writes each playlist item's 1-based position and playlist length to standard MP3/FLAC track fields.

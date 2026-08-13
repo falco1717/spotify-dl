@@ -32,6 +32,7 @@ pub async fn get_tracks(spotify_ids: Vec<String>, session: &Session) -> Result<V
                 vec![Track {
                     uri: uri.clone(),
                     playlist_position: None,
+                    playlist_uri: None,
                 }]
             }
             SpotifyUri::Album { id } => Album::from_id(id).get_tracks(session).await,
@@ -71,6 +72,7 @@ fn parse_url(track_url: &str) -> Option<SpotifyUri> {
 pub struct Track {
     pub uri: SpotifyUri,
     pub playlist_position: Option<(u16, u16)>,
+    pub playlist_uri: Option<SpotifyUri>,
 }
 
 lazy_static! {
@@ -90,6 +92,7 @@ impl Track {
         Ok(Track {
             uri,
             playlist_position: None,
+            playlist_uri: None,
         })
     }
 
@@ -177,6 +180,7 @@ impl TrackCollection for Album {
                 SpotifyUri::Album { .. } => Some(Track {
                     uri: uri.clone(),
                     playlist_position: None,
+                    playlist_uri: None,
                 }),
                 _ => None,
             })
@@ -221,6 +225,7 @@ impl TrackCollection for Playlist {
                 SpotifyUri::Track { .. } => Some(Track {
                     uri: uri.clone(),
                     playlist_position: Some((u16::try_from(index + 1).unwrap_or(u16::MAX), total)),
+                    playlist_uri: Some(self.uri.clone()),
                 }),
                 _ => None,
             })

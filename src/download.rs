@@ -12,11 +12,14 @@ use indicatif::ProgressBar;
 use indicatif::ProgressState;
 use indicatif::ProgressStyle;
 use librespot::core::session::Session;
+use tokio::sync::Mutex;
 
 use crate::encoder;
 use crate::encoder::Format;
 use crate::encoder::Samples;
+use crate::history::PlaylistHistory;
 use crate::stream::Stream;
+use crate::stream::StreamError;
 use crate::stream::StreamEvent;
 use crate::stream::StreamEventChannel;
 use crate::track::Track;
@@ -28,6 +31,7 @@ const RETRY_PAUSE: Duration = Duration::from_secs(5 * 60);
 pub struct Downloader {
     session: Session,
     progress_bar: MultiProgress,
+    history: Option<Arc<Mutex<PlaylistHistory>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +42,8 @@ pub struct DownloadOptions {
     pub force: bool,
     pub machine_readable: bool,
     pub playlist_track_numbers: bool,
+    pub playlist_sync: bool,
+    pub realistic_delay: bool,
 }
 
 impl DownloadOptions {
@@ -48,6 +54,8 @@ impl DownloadOptions {
         force: bool,
         machine_readable: bool,
         playlist_track_numbers: bool,
+        playlist_sync: bool,
+        realistic_delay: bool,
     ) -> Self {
         let destination =
             destination.map_or_else(|| std::env::current_dir().unwrap(), PathBuf::from);
@@ -58,15 +66,18 @@ impl DownloadOptions {
             force,
             machine_readable,
             playlist_track_numbers,
+            playlist_sync,
+            realistic_delay,
         }
     }
 }
 
 impl Downloader {
-    pub fn new(session: Session) -> Self {
+    pub fn new(session: Session, history: Option<Arc<Mutex<PlaylistHistory>>>) -> Self {
         Downloader {
             session,
             progress_bar: MultiProgress::new(),
+            history,
         }
     }
 
@@ -91,7 +102,33 @@ impl Downloader {
 
     #[tracing::instrument(name = "download_track", skip(self))]
     async fn download_track(&self, track: Track, options: &DownloadOptions) -> Result<()> {
-        let metadata = track.metadata(&self.session).await?;
+        if options.playlist_sync && self.was_downloaded(&track).await {
+            emit_machine_event(
+                options.machine_readable,
+                "ITEM_SYNC_SKIP",
+                &[track
+                    .uri
+                    .to_uri()
+                    .unwrap_or_else(|_| format!("{:?}", track.uri))],
+            );
+            return Ok(());
+        }
+
+        let metadata = match track.metadata(&self.session).await {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                tracing::warn!(%error, "Skipping a track whose metadata is unavailable");
+                emit_machine_event(
+                    options.machine_readable,
+                    "ITEM_UNAVAILABLE",
+                    &[track
+                        .uri
+                        .to_uri()
+                        .unwrap_or_else(|_| format!("{:?}", track.uri))],
+                );
+                return Ok(());
+            }
+        };
         tracing::info!("Downloading track: {:?}", metadata.track_name);
         let display_name = metadata.to_string();
 
@@ -110,6 +147,7 @@ impl Downloader {
                 &metadata.track_name
             );
             emit_machine_event(options.machine_readable, "ITEM_SKIP", &[display_name]);
+            self.mark_downloaded(&track, options.playlist_sync).await;
             return Ok(());
         }
 
@@ -141,6 +179,19 @@ impl Downloader {
 
             match result {
                 Ok(samples) => break samples,
+                Err(error)
+                    if error
+                        .downcast_ref::<StreamError>()
+                        .is_some_and(|error| matches!(error, StreamError::Unavailable)) =>
+                {
+                    pb.finish_with_message(format!("Unavailable {}", display_name));
+                    emit_machine_event(
+                        options.machine_readable,
+                        "ITEM_UNAVAILABLE",
+                        &[display_name],
+                    );
+                    return Ok(());
+                }
                 Err(error) if retry < MAX_TRACK_RETRIES => {
                     retry += 1;
                     tracing::warn!(
@@ -213,7 +264,21 @@ impl Downloader {
         encoder::tags::store_tags(path, &tags, options.format).await?;
 
         pb.finish_with_message(format!("Downloaded {}", metadata.to_string()));
-        emit_machine_event(options.machine_readable, "ITEM_DONE", &[display_name]);
+        emit_machine_event(
+            options.machine_readable,
+            "ITEM_DONE",
+            &[display_name.clone()],
+        );
+        self.mark_downloaded(&track, options.playlist_sync).await;
+        if options.realistic_delay && options.parallel == 1 {
+            let delay = Duration::from_millis((metadata.duration.max(0) as u64) / 5);
+            emit_machine_event(
+                options.machine_readable,
+                "PACING_WAIT",
+                &[display_name, delay.as_secs().to_string()],
+            );
+            tokio::time::sleep(delay).await;
+        }
         Ok(())
     }
 
@@ -275,7 +340,7 @@ impl Downloader {
                 }
                 StreamEvent::Error(stream_error) => {
                     tracing::error!("Error while streaming track: {:?}", stream_error);
-                    return Err(anyhow::anyhow!("Streaming error: {:?}", stream_error));
+                    return Err(stream_error.into());
                 }
             }
         }
@@ -297,6 +362,29 @@ impl Downloader {
                 .red()
                 .to_string(),
         );
+    }
+
+    async fn was_downloaded(&self, track: &Track) -> bool {
+        let Some(history) = &self.history else {
+            return false;
+        };
+        let Some(playlist) = &track.playlist_uri else {
+            return false;
+        };
+        history.lock().await.contains(playlist, &track.uri)
+    }
+
+    async fn mark_downloaded(&self, track: &Track, enabled: bool) {
+        if !enabled {
+            return;
+        }
+        let Some(history) = &self.history else { return };
+        let Some(playlist) = &track.playlist_uri else {
+            return;
+        };
+        if let Err(error) = history.lock().await.record(playlist, &track.uri) {
+            tracing::warn!(%error, "Failed to update playlist sync history");
+        }
     }
 }
 
@@ -380,6 +468,7 @@ mod tests {
         let track = Track {
             uri: SpotifyUri::from_uri("spotify:track:6oUGAx0vkBcnGzYkvw0ZsA").unwrap(),
             playlist_position: Some((1, 91)),
+            playlist_uri: None,
         };
         apply_playlist_position(&mut tags, &track, false);
         assert_eq!(tags.track, None);

@@ -1,9 +1,12 @@
 use spotify_dl::download::{DownloadOptions, Downloader};
 use spotify_dl::encoder::Format;
+use spotify_dl::history::PlaylistHistory;
 use spotify_dl::log;
 use spotify_dl::session::{create_session, is_logged_in, login, logout};
 use spotify_dl::track::get_tracks;
+use std::sync::Arc;
 use structopt::StructOpt;
+use tokio::sync::Mutex;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -37,6 +40,7 @@ struct Opt {
     #[structopt(
         short = "t",
         long = "parallel",
+        alias = "turbo",
         help = "Number of parallel downloads. Default is 5.",
         default_value = "5"
     )]
@@ -65,6 +69,21 @@ struct Opt {
         help = "Write each playlist item's position and playlist length to its track-number tags"
     )]
     playlist_track_numbers: bool,
+    #[structopt(
+        long = "playlist-sync",
+        help = "Remember completed playlist items in the destination and download only new items"
+    )]
+    playlist_sync: bool,
+    #[structopt(
+        long = "reset-sync-history",
+        help = "Clear playlist sync history in the destination and exit"
+    )]
+    reset_sync_history: bool,
+    #[structopt(
+        long = "realistic-delay",
+        help = "With --parallel 1, pause briefly between tracks to mimic normal listening"
+    )]
+    realistic_delay: bool,
 }
 
 pub fn create_destination_if_required(destination: Option<String>) -> anyhow::Result<()> {
@@ -122,6 +141,23 @@ async fn main() -> anyhow::Result<()> {
 
     create_destination_if_required(opt.destination.clone())?;
 
+    let destination = opt
+        .destination
+        .clone()
+        .map(std::path::PathBuf::from)
+        .unwrap_or(std::env::current_dir()?);
+    if opt.reset_sync_history {
+        println!(
+            "SYNC_HISTORY_RESET={}",
+            if PlaylistHistory::reset(&destination)? {
+                "removed"
+            } else {
+                "empty"
+            }
+        );
+        return Ok(());
+    }
+
     if opt.tracks.is_empty() {
         anyhow::bail!("No tracks provided. Pass a Spotify URL or use an authentication command.");
     }
@@ -130,7 +166,10 @@ async fn main() -> anyhow::Result<()> {
 
     let track = get_tracks(opt.tracks, &session).await?;
 
-    let downloader = Downloader::new(session);
+    let history = opt
+        .playlist_sync
+        .then(|| Arc::new(Mutex::new(PlaylistHistory::load(&destination))));
+    let downloader = Downloader::new(session, history);
     downloader
         .download_tracks(
             track,
@@ -141,6 +180,8 @@ async fn main() -> anyhow::Result<()> {
                 opt.force,
                 opt.machine_readable,
                 opt.playlist_track_numbers,
+                opt.playlist_sync,
+                opt.realistic_delay,
             ),
         )
         .await

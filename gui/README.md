@@ -8,6 +8,10 @@ The status line counts each retry wait down once per second. While a download is
 
 Enable **Use playlist order as track #** to tag playlist items as `position/playlist length` in MP3 or FLAC metadata. The option is remembered between launches and does not alter standalone track or album numbering.
 
+Enable **Playlist sync** to keep a `.spotify-dl-history.json` file in the selected destination. Later runs skip completed playlist items before fetching their metadata. **Reset history** clears only that file and does not delete music. The last Spotify URL is remembered locally in the GUI settings.
+
+The speed selector offers **Normal** (one track at a time with a short listening-style pause), **Turbo (5)**, and a custom parallel-download count. Unavailable Spotify items appear as skipped and do not stop the playlist.
+
 ## Run from source
 
 ```powershell

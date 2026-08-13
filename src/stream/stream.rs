@@ -45,14 +45,7 @@ impl Stream {
                 Ok(_) => tracing::info!("Track loaded successfully: {:?}", track.uri),
                 Err(e) => {
                     tracing::error!("Failed to load track: {:?}, error: {:?}", track.uri, e);
-                    Self::send_event(
-                        &tx,
-                        StreamEvent::Error(StreamError::LoadError(format!(
-                            "Failed to load track: {:?}",
-                            track.uri
-                        ))),
-                    )
-                    .await;
+                    Self::send_event(&tx, StreamEvent::Error(e)).await;
                     return;
                 }
             }
@@ -87,7 +80,7 @@ impl Stream {
         Ok(rx)
     }
 
-    async fn load(player: Arc<Player>, track: &Track) -> Result<()> {
+    async fn load(player: Arc<Player>, track: &Track) -> Result<(), StreamError> {
         player.load(track.uri.clone(), true, 0);
 
         tracing::info!("Loading track: {:?}", track.uri);
@@ -101,7 +94,7 @@ impl Stream {
                 }
                 Some(PlayerEvent::Unavailable { .. }) => {
                     tracing::info!("Track is unavailable: {:?}", track.uri);
-                    return Err(anyhow::anyhow!("Could not load track: {:?}", track.uri));
+                    return Err(StreamError::Unavailable);
                 }
                 _ => {
                     // Ignore other events

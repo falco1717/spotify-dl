@@ -69,6 +69,18 @@ spotify-dl --playlist-track-numbers https://open.spotify.com/playlist/PLAYLIST_I
 
 This is opt-in and applies only to items expanded from playlists.
 
+### Playlist sync and speed controls
+
+Use per-folder playlist history to download only items that have not previously completed:
+
+```sh
+spotify-dl --playlist-sync --destination "D:\Music" PLAYLIST_URL
+```
+
+The history file contains only Spotify playlist and track identifiers. Clear it with `spotify-dl --destination "D:\Music" --reset-sync-history`. Use `--parallel 1 --realistic-delay` for paced Normal mode, `--turbo 5` (an alias for `--parallel 5`) for Turbo mode, or choose another parallel count.
+
+Tracks Spotify reports as unavailable are skipped without stopping the remainder of the playlist.
+
 ```
 spotify-dl 0.9.0
 A commandline utility to download music directly from Spotify
