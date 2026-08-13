@@ -22,6 +22,9 @@ use crate::stream::StreamEventChannel;
 use crate::track::Track;
 use crate::track::TrackMetadata;
 
+const PLAYLIST_BATCH_SIZE: usize = 28;
+const PLAYLIST_BATCH_PAUSE: Duration = Duration::from_secs(3 * 60);
+
 pub struct Downloader {
     session: Session,
     progress_bar: MultiProgress,
@@ -74,11 +77,40 @@ impl Downloader {
             "QUEUE",
             &[tracks.len().to_string()],
         );
-        futures::stream::iter(tracks)
-            .map(|track| self.download_track(track, options))
-            .buffer_unordered(options.parallel)
-            .try_collect::<Vec<_>>()
-            .await?;
+        let total_tracks = tracks.len();
+        for (batch_index, batch) in tracks.chunks(PLAYLIST_BATCH_SIZE).enumerate() {
+            futures::stream::iter(batch.iter().cloned())
+                .map(|track| self.download_track(track, options))
+                .buffer_unordered(options.parallel)
+                .try_collect::<Vec<_>>()
+                .await?;
+
+            let completed = ((batch_index + 1) * PLAYLIST_BATCH_SIZE).min(total_tracks);
+            if completed < total_tracks {
+                let remaining = total_tracks - completed;
+                tracing::info!(
+                    "Downloaded batch of {} tracks; pausing for {} seconds before {} remaining tracks",
+                    batch.len(),
+                    PLAYLIST_BATCH_PAUSE.as_secs(),
+                    remaining
+                );
+                emit_machine_event(
+                    options.machine_readable,
+                    "BATCH_PAUSE",
+                    &[
+                        PLAYLIST_BATCH_PAUSE.as_secs().to_string(),
+                        completed.to_string(),
+                        remaining.to_string(),
+                    ],
+                );
+                tokio::time::sleep(PLAYLIST_BATCH_PAUSE).await;
+                emit_machine_event(
+                    options.machine_readable,
+                    "BATCH_RESUME",
+                    &[completed.to_string(), remaining.to_string()],
+                );
+            }
+        }
 
         Ok(())
     }
@@ -298,7 +330,7 @@ fn sanitize_machine_field(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_machine_event;
+    use super::{PLAYLIST_BATCH_SIZE, format_machine_event};
 
     #[test]
     fn machine_events_are_single_line_and_tab_delimited() {
@@ -307,5 +339,16 @@ mod tests {
             &["Artist\tTitle\nLive".to_string(), "42".to_string()],
         );
         assert_eq!(event, "ITEM_PROGRESS\tArtist Title Live\t42");
+    }
+
+    #[test]
+    fn playlist_batch_size_is_twenty_eight_tracks() {
+        assert_eq!(PLAYLIST_BATCH_SIZE, 28);
+        let batch_sizes = (0..57)
+            .collect::<Vec<_>>()
+            .chunks(PLAYLIST_BATCH_SIZE)
+            .map(<[_]>::len)
+            .collect::<Vec<_>>();
+        assert_eq!(batch_sizes, vec![28, 28, 1]);
     }
 }

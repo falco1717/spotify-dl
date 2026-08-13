@@ -2,6 +2,8 @@
 
 A native Windows frontend for this fork of `spotify-dl`. It provides browser-based Spotify login, URL and destination fields, format selection, cancellation, and per-item download progress without requiring command-line use.
 
+Large playlists and albums download in groups of 28 tracks with a three-minute cooldown between groups. The activity feed reports each pause and resume.
+
 ## Run from source
 
 ```powershell

@@ -263,6 +263,8 @@ public sealed class MainForm : Form
             case "ITEM_SKIP" when fields.Length >= 2: AppendOutput($"SKIP    {fields[1]}", TextMuted); break;
             case "ITEM_DONE" when fields.Length >= 2: itemProgress.Value = 100; AppendOutput($"DONE    {fields[1]}", Primary); break;
             case "ITEM_ERROR" when fields.Length >= 3: AppendOutput($"FAILED  {fields[1]} — {fields[2]}", Color.FromArgb(244, 112, 112)); break;
+            case "BATCH_PAUSE" when fields.Length >= 4: currentItemLabel.Text = "Playlist cooldown"; itemProgress.Value = 0; statusLabel.Text = "Pausing for 3 minutes"; AppendOutput($"PAUSE   3-minute cooldown after {fields[2]} item(s); {fields[3]} remaining", Color.FromArgb(244, 180, 88)); break;
+            case "BATCH_RESUME" when fields.Length >= 3: statusLabel.Text = "Downloading"; AppendOutput($"RESUME  Continuing with {fields[2]} item(s)", Primary); break;
             default: AppendOutput(line, TextMuted); break;
         }
     }

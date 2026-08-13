@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.1-gui] - 2026-08-13
+
+- Download large queues in batches of 28 tracks with a three-minute cooldown between batches.
+- Report batch pauses and resumes in the Windows GUI activity feed.
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
