@@ -20,15 +20,19 @@ public sealed class MainForm : Form
     private readonly ComboBox formatBox = new();
     private readonly Button browseButton = new();
     private readonly Button downloadButton = new();
-    private readonly Button cancelButton = new();
     private readonly Button accountButton = new();
     private readonly RichTextBox outputBox = new();
     private readonly Label statusLabel = new();
     private readonly Label currentItemLabel = new();
     private readonly Label accountStatusLabel = new();
     private readonly ProgressBar itemProgress = new();
+    private readonly System.Windows.Forms.Timer countdownTimer = new() { Interval = 1000 };
     private Process? activeProcess;
     private bool isLoggedIn;
+    private bool isDownloadRunning;
+    private bool cancellationRequested;
+    private int countdownSeconds;
+    private string countdownPrefix = "Waiting";
 
     public MainForm()
     {
@@ -43,6 +47,7 @@ public sealed class MainForm : Form
         DoubleBuffered = true;
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         BuildLayout();
+        countdownTimer.Tick += (_, _) => { if (countdownSeconds > 0) countdownSeconds--; UpdateCountdown(); };
         LoadSettings();
         Shown += async (_, _) => { await RefreshAuthStatusAsync(); urlBox.Focus(); };
         DragEnter += HandleDragEnter;
@@ -112,12 +117,7 @@ public sealed class MainForm : Form
         var row = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 16, 0, 16), Margin = new Padding(0) };
         StyleButton(downloadButton, true);
         downloadButton.Text = "Download";
-        downloadButton.Click += async (_, _) => await DownloadAsync();
-        StyleButton(cancelButton, false);
-        cancelButton.Text = "Cancel";
-        cancelButton.Enabled = false;
-        cancelButton.Margin = new Padding(0, 0, 10, 0);
-        cancelButton.Click += (_, _) => CancelDownload();
+        downloadButton.Click += async (_, _) => { if (isDownloadRunning) CancelDownload(); else await DownloadAsync(); };
         formatBox.DropDownStyle = ComboBoxStyle.DropDownList;
         formatBox.Items.AddRange(["flac", "mp3"]);
         formatBox.SelectedIndex = 0;
@@ -128,7 +128,6 @@ public sealed class MainForm : Form
         formatBox.Font = new Font("Segoe UI Semibold", 10F);
         formatBox.Margin = new Padding(0, 4, 12, 0);
         row.Controls.Add(downloadButton);
-        row.Controls.Add(cancelButton);
         row.Controls.Add(formatBox);
         return row;
     }
@@ -225,7 +224,8 @@ public sealed class MainForm : Form
         var executable = FindSpotifyDl();
         if (executable is null) { ShowMissingCli(); return; }
         SaveSettings();
-        SetRunning(true);
+        cancellationRequested = false;
+        SetRunning(true, true);
         outputBox.Clear();
         currentItemLabel.Text = "Preparing download…";
         itemProgress.Value = 0;
@@ -241,11 +241,12 @@ public sealed class MainForm : Form
             activeProcess.BeginOutputReadLine();
             activeProcess.BeginErrorReadLine();
             await activeProcess.WaitForExitAsync();
-            statusLabel.Text = activeProcess.ExitCode == 0 ? "Download complete" : $"Download failed (exit code {activeProcess.ExitCode})";
-            if (activeProcess.ExitCode == 0) itemProgress.Value = 100;
+            StopCountdown();
+            statusLabel.Text = cancellationRequested ? "Cancelled" : activeProcess.ExitCode == 0 ? "Download complete" : $"Download failed (exit code {activeProcess.ExitCode})";
+            if (!cancellationRequested && activeProcess.ExitCode == 0) itemProgress.Value = 100;
         }
         catch (Exception ex) { AppendOutput(ex.Message, Color.FromArgb(244, 112, 112)); statusLabel.Text = "Download failed"; }
-        finally { activeProcess?.Dispose(); activeProcess = null; SetRunning(false); }
+        finally { StopCountdown(); activeProcess?.Dispose(); activeProcess = null; SetRunning(false); cancellationRequested = false; }
     }
 
     private void HandleDownloadOutput(string? line)
@@ -256,15 +257,15 @@ public sealed class MainForm : Form
         switch (fields[0])
         {
             case "QUEUE" when fields.Length >= 2: AppendOutput($"QUEUED  {fields[1]} item(s)", TextMuted); break;
-            case "ITEM_START" when fields.Length >= 2: currentItemLabel.Text = fields[1]; itemProgress.Value = 0; AppendOutput($"START   {fields[1]}", Color.FromArgb(126, 192, 255)); break;
-            case "ITEM_PROGRESS" when fields.Length >= 3 && int.TryParse(fields[2], out var percent): itemProgress.Value = Math.Clamp(percent, 0, 100); if (percent == 100 || percent % 5 == 0) AppendOutput($"{percent,3}%    {fields[1]}", Color.FromArgb(164, 176, 169)); break;
+            case "ITEM_START" when fields.Length >= 2: StopCountdown(); currentItemLabel.Text = fields[1]; itemProgress.Value = 0; statusLabel.Text = "Downloading"; AppendOutput($"START   {fields[1]}", Color.FromArgb(126, 192, 255)); break;
+            case "ITEM_PROGRESS" when fields.Length >= 3 && int.TryParse(fields[2], out var percent): StopCountdown(); itemProgress.Value = Math.Clamp(percent, 0, 100); if (percent == 100 || percent % 5 == 0) AppendOutput($"{percent,3}%    {fields[1]}", Color.FromArgb(164, 176, 169)); break;
             case "ITEM_STAGE" when fields.Length >= 3: AppendOutput($"{fields[2].ToUpperInvariant(),-7} {fields[1]}", Color.FromArgb(224, 190, 113)); break;
-            case "ITEM_RETRY" when fields.Length >= 5: currentItemLabel.Text = fields[1]; itemProgress.Value = 0; statusLabel.Text = "Retrying in 3 minutes"; AppendOutput($"RETRY   {fields[2]}/{fields[3]} — waiting 3 minutes — {fields[1]}", Color.FromArgb(244, 180, 88)); break;
+            case "ITEM_RETRY" when fields.Length >= 5 && int.TryParse(fields[4], out var retryDelay): currentItemLabel.Text = fields[1]; itemProgress.Value = 0; StartCountdown(retryDelay, "Retrying in"); AppendOutput($"RETRY   {fields[2]}/{fields[3]} — waiting 3 minutes — {fields[1]}", Color.FromArgb(244, 180, 88)); break;
             case "ITEM_SKIP" when fields.Length >= 2: AppendOutput($"SKIP    {fields[1]}", TextMuted); break;
             case "ITEM_DONE" when fields.Length >= 2: itemProgress.Value = 100; AppendOutput($"DONE    {fields[1]}", Primary); break;
             case "ITEM_ERROR" when fields.Length >= 3: AppendOutput($"FAILED  {fields[1]} — {fields[2]}", Color.FromArgb(244, 112, 112)); break;
-            case "BATCH_PAUSE" when fields.Length >= 4: currentItemLabel.Text = "Playlist cooldown"; itemProgress.Value = 0; statusLabel.Text = "Pausing for 3 minutes"; AppendOutput($"PAUSE   3-minute cooldown after {fields[2]} item(s); {fields[3]} remaining", Color.FromArgb(244, 180, 88)); break;
-            case "BATCH_RESUME" when fields.Length >= 3: statusLabel.Text = "Downloading"; AppendOutput($"RESUME  Continuing with {fields[2]} item(s)", Primary); break;
+            case "BATCH_PAUSE" when fields.Length >= 4 && int.TryParse(fields[1], out var batchDelay): currentItemLabel.Text = "Playlist cooldown"; itemProgress.Value = 0; StartCountdown(batchDelay, "Next batch in"); AppendOutput($"PAUSE   3-minute cooldown after {fields[2]} item(s); {fields[3]} remaining", Color.FromArgb(244, 180, 88)); break;
+            case "BATCH_RESUME" when fields.Length >= 3: StopCountdown(); statusLabel.Text = "Downloading"; AppendOutput($"RESUME  Continuing with {fields[2]} item(s)", Primary); break;
             default: AppendOutput(line, TextMuted); break;
         }
     }
@@ -313,8 +314,11 @@ public sealed class MainForm : Form
         foreach (var folder in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator)) { var candidate = Path.Combine(folder.Trim(), "spotify-dl.exe"); if (File.Exists(candidate)) return candidate; }
         return null;
     }
-    private void CancelDownload() { if (activeProcess is not { HasExited: false }) return; activeProcess.Kill(true); statusLabel.Text = "Cancelled"; AppendOutput("CANCEL  Download stopped", Color.FromArgb(244, 180, 88)); }
-    private void SetRunning(bool running) { downloadButton.Enabled = !running; cancelButton.Enabled = running; urlBox.Enabled = !running; destinationBox.Enabled = !running; browseButton.Enabled = !running; formatBox.Enabled = !running; accountButton.Enabled = !running; }
+    private void CancelDownload() { if (activeProcess is not { HasExited: false }) return; cancellationRequested = true; StopCountdown(); downloadButton.Enabled = false; downloadButton.Text = "Cancelling…"; activeProcess.Kill(true); statusLabel.Text = "Cancelling…"; AppendOutput("CANCEL  Download stopping", Color.FromArgb(244, 180, 88)); }
+    private void SetRunning(bool running, bool cancellable = false) { isDownloadRunning = running && cancellable; downloadButton.Text = isDownloadRunning ? "Cancel" : "Download"; downloadButton.BackColor = isDownloadRunning ? Color.FromArgb(190, 65, 65) : Primary; downloadButton.ForeColor = isDownloadRunning ? Color.White : Color.FromArgb(7, 24, 13); downloadButton.Enabled = !running || cancellable; AcceptButton = running ? null : downloadButton; urlBox.Enabled = !running; destinationBox.Enabled = !running; browseButton.Enabled = !running; formatBox.Enabled = !running; accountButton.Enabled = !running; }
+    private void StartCountdown(int seconds, string prefix) { countdownSeconds = Math.Max(0, seconds); countdownPrefix = prefix; UpdateCountdown(); countdownTimer.Start(); }
+    private void UpdateCountdown() { var minutes = countdownSeconds / 60; var seconds = countdownSeconds % 60; statusLabel.Text = countdownSeconds > 0 ? $"{countdownPrefix} {minutes}:{seconds:00}" : "Resuming…"; if (countdownSeconds <= 0) countdownTimer.Stop(); }
+    private void StopCountdown() { countdownTimer.Stop(); countdownSeconds = 0; }
     private void AppendOutput(string? text, Color color) { if (string.IsNullOrEmpty(text)) return; if (InvokeRequired) { BeginInvoke(() => AppendOutput(text, color)); return; } outputBox.SelectionStart = outputBox.TextLength; outputBox.SelectionColor = color; outputBox.AppendText(text + Environment.NewLine); outputBox.SelectionColor = outputBox.ForeColor; outputBox.ScrollToCaret(); }
     private void ShowValidation(string message, Control focus) { MessageBox.Show(this, message, "Check your entry", MessageBoxButtons.OK, MessageBoxIcon.Warning); focus.Focus(); }
     private void ShowMissingCli() => MessageBox.Show(this, "spotify-dl.exe was not found. Reinstall it or add it to PATH.", "Spotify DL not found", MessageBoxButtons.OK, MessageBoxIcon.Error);

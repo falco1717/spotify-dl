@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.3-gui] - 2026-08-13
+
+- Show live `M:SS` countdowns during retry and playlist cooldown pauses.
+- Replace the separate Download and Cancel controls with one state-aware action button.
+
 ## [0.3.2-gui] - 2026-08-13
 
 - Replace short exponential track-load retry delays with a fixed three-minute pause before every retry.
