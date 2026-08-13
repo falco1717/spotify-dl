@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.11-gui] - 2026-08-13
+
+- Publish a maintenance release for validating the new in-application update flow.
+
 ## [0.3.10-gui] - 2026-08-13
 
 - Add automatic daily and manual GitHub Release update checks.
