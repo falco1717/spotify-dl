@@ -89,13 +89,14 @@ impl Downloader {
         tracing::info!("Downloading track: {:?}", metadata.track_name);
         let display_name = metadata.to_string();
 
-        let path = options
-            .destination
-            .join(metadata.to_string())
-            .with_extension(options.format.extension())
-            .to_str()
-            .ok_or(anyhow::anyhow!("Could not set the output path"))?
-            .to_string();
+        let path = output_path(
+            &options.destination,
+            &metadata.to_string(),
+            options.format.extension(),
+        )
+        .to_str()
+        .ok_or(anyhow::anyhow!("Could not set the output path"))?
+        .to_string();
 
         if !options.force && PathBuf::from(&path).exists() {
             tracing::info!(
@@ -298,9 +299,13 @@ fn sanitize_machine_field(value: &str) -> String {
     value.replace(['\t', '\r', '\n'], " ")
 }
 
+fn output_path(destination: &std::path::Path, name: &str, extension: &str) -> PathBuf {
+    destination.join(format!("{name}.{extension}"))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::format_machine_event;
+    use super::{format_machine_event, output_path};
 
     #[test]
     fn machine_events_are_single_line_and_tab_delimited() {
@@ -309,5 +314,18 @@ mod tests {
             &["Artist\tTitle\nLive".to_string(), "42".to_string()],
         );
         assert_eq!(event, "ITEM_PROGRESS\tArtist Title Live\t42");
+    }
+
+    #[test]
+    fn dotted_names_keep_the_full_title_before_the_extension() {
+        let destination = std::path::Path::new("music");
+        assert_eq!(
+            output_path(destination, "V.I.C. - Get Silly", "mp3"),
+            destination.join("V.I.C. - Get Silly.mp3")
+        );
+        assert_eq!(
+            output_path(destination, "V.I.C. - Wobble", "mp3"),
+            destination.join("V.I.C. - Wobble.mp3")
+        );
     }
 }

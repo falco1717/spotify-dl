@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.6-gui] - 2026-08-13
+
+- Preserve dotted artist/title names when adding the audio extension, preventing distinct tracks such as `V.I.C. - Get Silly` and `V.I.C. - Wobble` from overwriting one another.
+
 ## [0.3.5-gui] - 2026-08-13
 
 - Increase the pause before every track-load retry from three minutes to five minutes.
