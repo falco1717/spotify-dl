@@ -18,6 +18,7 @@ public sealed class MainForm : Form
     private readonly TextBox urlBox = new();
     private readonly TextBox destinationBox = new();
     private readonly ComboBox formatBox = new();
+    private readonly CheckBox playlistTrackNumbersBox = new();
     private readonly Button browseButton = new();
     private readonly Button downloadButton = new();
     private readonly Button accountButton = new();
@@ -127,8 +128,14 @@ public sealed class MainForm : Form
         formatBox.FlatStyle = FlatStyle.Flat;
         formatBox.Font = new Font("Segoe UI Semibold", 10F);
         formatBox.Margin = new Padding(0, 4, 12, 0);
+        playlistTrackNumbersBox.Text = "Use playlist order as track #";
+        playlistTrackNumbersBox.AutoSize = true;
+        playlistTrackNumbersBox.ForeColor = TextMuted;
+        playlistTrackNumbersBox.Font = new Font("Segoe UI", 9.5F);
+        playlistTrackNumbersBox.Margin = new Padding(0, 10, 16, 0);
         row.Controls.Add(downloadButton);
         row.Controls.Add(formatBox);
+        row.Controls.Add(playlistTrackNumbersBox);
         return row;
     }
 
@@ -232,6 +239,7 @@ public sealed class MainForm : Form
         statusLabel.Text = "Downloading…";
         var startInfo = NewCliStartInfo(executable);
         foreach (var argument in new[] { "--destination", destination, "--format", formatBox.SelectedItem?.ToString() ?? "flac", "--machine-readable", url }) startInfo.ArgumentList.Add(argument);
+        if (playlistTrackNumbersBox.Checked) startInfo.ArgumentList.Insert(startInfo.ArgumentList.Count - 1, "--playlist-track-numbers");
         try
         {
             activeProcess = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
@@ -314,7 +322,7 @@ public sealed class MainForm : Form
         return null;
     }
     private void CancelDownload() { if (activeProcess is not { HasExited: false }) return; cancellationRequested = true; StopCountdown(); downloadButton.Enabled = false; downloadButton.Text = "Cancelling…"; activeProcess.Kill(true); statusLabel.Text = "Cancelling…"; AppendOutput("CANCEL  Download stopping", Color.FromArgb(244, 180, 88)); }
-    private void SetRunning(bool running, bool cancellable = false) { isDownloadRunning = running && cancellable; downloadButton.Text = isDownloadRunning ? "Cancel" : "Download"; downloadButton.BackColor = isDownloadRunning ? Color.FromArgb(190, 65, 65) : Primary; downloadButton.ForeColor = isDownloadRunning ? Color.White : Color.FromArgb(7, 24, 13); downloadButton.Enabled = !running || cancellable; AcceptButton = running ? null : downloadButton; urlBox.Enabled = !running; destinationBox.Enabled = !running; browseButton.Enabled = !running; formatBox.Enabled = !running; accountButton.Enabled = !running; }
+    private void SetRunning(bool running, bool cancellable = false) { isDownloadRunning = running && cancellable; downloadButton.Text = isDownloadRunning ? "Cancel" : "Download"; downloadButton.BackColor = isDownloadRunning ? Color.FromArgb(190, 65, 65) : Primary; downloadButton.ForeColor = isDownloadRunning ? Color.White : Color.FromArgb(7, 24, 13); downloadButton.Enabled = !running || cancellable; AcceptButton = running ? null : downloadButton; urlBox.Enabled = !running; destinationBox.Enabled = !running; browseButton.Enabled = !running; formatBox.Enabled = !running; playlistTrackNumbersBox.Enabled = !running; accountButton.Enabled = !running; }
     private void StartCountdown(int seconds, string prefix) { countdownSeconds = Math.Max(0, seconds); countdownPrefix = prefix; UpdateCountdown(); countdownTimer.Start(); }
     private static string FormatDuration(int seconds) => seconds % 60 == 0 ? $"{seconds / 60} minute{(seconds == 60 ? "" : "s")}" : $"{seconds} seconds";
     private void UpdateCountdown() { var minutes = countdownSeconds / 60; var seconds = countdownSeconds % 60; statusLabel.Text = countdownSeconds > 0 ? $"{countdownPrefix} {minutes}:{seconds:00}" : "Resuming…"; if (countdownSeconds <= 0) countdownTimer.Stop(); }
@@ -325,9 +333,9 @@ public sealed class MainForm : Form
     private void HandleDragEnter(object? sender, DragEventArgs e) { if (e.Data?.GetDataPresent(DataFormats.Text) == true) e.Effect = DragDropEffects.Copy; }
     private void HandleDragDrop(object? sender, DragEventArgs e) { if (e.Data?.GetData(DataFormats.Text) is string text) urlBox.Text = text.Trim(); }
     private static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpotifyDlGui", "settings.json");
-    private void LoadSettings() { try { if (!File.Exists(SettingsPath)) { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); return; } var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)); destinationBox.Text = settings?.Destination ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); if (settings?.Format is string format && formatBox.Items.Contains(format)) formatBox.SelectedItem = format; } catch { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); } }
-    private void SaveSettings() { try { Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new AppSettings(destinationBox.Text.Trim(), formatBox.SelectedItem?.ToString() ?? "flac"))); } catch { } }
-    private sealed record AppSettings(string Destination, string Format);
+    private void LoadSettings() { try { if (!File.Exists(SettingsPath)) { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); return; } var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)); destinationBox.Text = settings?.Destination ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); if (settings?.Format is string format && formatBox.Items.Contains(format)) formatBox.SelectedItem = format; playlistTrackNumbersBox.Checked = settings?.PlaylistTrackNumbers ?? false; } catch { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); } }
+    private void SaveSettings() { try { Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new AppSettings(destinationBox.Text.Trim(), formatBox.SelectedItem?.ToString() ?? "flac", playlistTrackNumbersBox.Checked))); } catch { } }
+    private sealed record AppSettings(string Destination, string Format, bool PlaylistTrackNumbers = false);
 }
 
 internal sealed class RoundedPanel : TableLayoutPanel

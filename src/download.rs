@@ -37,6 +37,7 @@ pub struct DownloadOptions {
     pub format: Format,
     pub force: bool,
     pub machine_readable: bool,
+    pub playlist_track_numbers: bool,
 }
 
 impl DownloadOptions {
@@ -46,6 +47,7 @@ impl DownloadOptions {
         format: Format,
         force: bool,
         machine_readable: bool,
+        playlist_track_numbers: bool,
     ) -> Self {
         let destination =
             destination.map_or_else(|| std::env::current_dir().unwrap(), PathBuf::from);
@@ -55,6 +57,7 @@ impl DownloadOptions {
             format,
             force,
             machine_readable,
+            playlist_track_numbers,
         }
     }
 }
@@ -205,7 +208,8 @@ impl Downloader {
         );
         stream.write_to_file(&path).await?;
 
-        let tags = metadata.tags().await?;
+        let mut tags = metadata.tags().await?;
+        apply_playlist_position(&mut tags, &track, options.playlist_track_numbers);
         encoder::tags::store_tags(path, &tags, options.format).await?;
 
         pb.finish_with_message(format!("Downloaded {}", metadata.to_string()));
@@ -321,9 +325,20 @@ fn output_path(destination: &std::path::Path, name: &str, extension: &str) -> Pa
     destination.join(format!("{name}.{extension}"))
 }
 
+fn apply_playlist_position(tags: &mut crate::encoder::tags::Tags, track: &Track, enabled: bool) {
+    if enabled {
+        tags.track = track.playlist_position;
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MAX_TRACK_RETRIES, RETRY_PAUSE, format_machine_event, output_path};
+    use super::{
+        MAX_TRACK_RETRIES, RETRY_PAUSE, apply_playlist_position, format_machine_event, output_path,
+    };
+    use crate::encoder::tags::Tags;
+    use crate::track::Track;
+    use librespot::core::SpotifyUri;
 
     #[test]
     fn machine_events_are_single_line_and_tab_delimited() {
@@ -351,5 +366,24 @@ mod tests {
     fn retry_policy_uses_fresh_attempts_after_five_minutes() {
         assert_eq!(MAX_TRACK_RETRIES, 3);
         assert_eq!(RETRY_PAUSE.as_secs(), 300);
+    }
+
+    #[test]
+    fn playlist_position_is_applied_only_when_enabled() {
+        let mut tags = Tags {
+            title: "Song".to_string(),
+            artists: vec!["Artist".to_string()],
+            album_title: "Album".to_string(),
+            album_cover: None,
+            track: None,
+        };
+        let track = Track {
+            uri: SpotifyUri::from_uri("spotify:track:6oUGAx0vkBcnGzYkvw0ZsA").unwrap(),
+            playlist_position: Some((1, 91)),
+        };
+        apply_playlist_position(&mut tags, &track, false);
+        assert_eq!(tags.track, None);
+        apply_playlist_position(&mut tags, &track, true);
+        assert_eq!(tags.track, Some((1, 91)));
     }
 }

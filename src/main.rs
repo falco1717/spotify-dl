@@ -60,6 +60,11 @@ struct Opt {
         hidden = true
     )]
     machine_readable: bool,
+    #[structopt(
+        long = "playlist-track-numbers",
+        help = "Write each playlist item's position and playlist length to its track-number tags"
+    )]
+    playlist_track_numbers: bool,
 }
 
 pub fn create_destination_if_required(destination: Option<String>) -> anyhow::Result<()> {
@@ -135,6 +140,7 @@ async fn main() -> anyhow::Result<()> {
                 opt.format,
                 opt.force,
                 opt.machine_readable,
+                opt.playlist_track_numbers,
             ),
         )
         .await

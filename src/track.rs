@@ -29,7 +29,10 @@ pub async fn get_tracks(spotify_ids: Vec<String>, session: &Session) -> Result<V
         let uri: SpotifyUri = parse_uri_or_url(&id).ok_or(anyhow::anyhow!("Invalid track"))?;
         let new_tracks = match uri {
             SpotifyUri::Track { .. } | SpotifyUri::Episode { .. } => {
-                vec![Track { uri: uri.clone() }]
+                vec![Track {
+                    uri: uri.clone(),
+                    playlist_position: None,
+                }]
             }
             SpotifyUri::Album { id } => Album::from_id(id).get_tracks(session).await,
             SpotifyUri::Playlist { id, .. } => Playlist::from_id(id).get_tracks(session).await,
@@ -67,6 +70,7 @@ fn parse_url(track_url: &str) -> Option<SpotifyUri> {
 #[derive(Clone, Debug)]
 pub struct Track {
     pub uri: SpotifyUri,
+    pub playlist_position: Option<(u16, u16)>,
 }
 
 lazy_static! {
@@ -83,7 +87,10 @@ impl Track {
             })
             .unwrap()
             .ok_or(anyhow::anyhow!("Invalid track"))?;
-        Ok(Track { uri })
+        Ok(Track {
+            uri,
+            playlist_position: None,
+        })
     }
 
     pub async fn metadata(&self, session: &Session) -> Result<TrackMetadata> {
@@ -167,7 +174,10 @@ impl TrackCollection for Album {
         album
             .tracks()
             .filter_map(|uri| match uri {
-                SpotifyUri::Album { .. } => Some(Track { uri: uri.clone() }),
+                SpotifyUri::Album { .. } => Some(Track {
+                    uri: uri.clone(),
+                    playlist_position: None,
+                }),
                 _ => None,
             })
             .collect()
@@ -203,10 +213,15 @@ impl TrackCollection for Playlist {
         let playlist = librespot::metadata::Playlist::get(session, &self.uri)
             .await
             .expect("Failed to get playlist");
+        let total = u16::try_from(playlist.tracks().len()).unwrap_or(u16::MAX);
         playlist
             .tracks()
-            .filter_map(|uri| match uri {
-                SpotifyUri::Track { .. } => Some(Track { uri: uri.clone() }),
+            .enumerate()
+            .filter_map(|(index, uri)| match uri {
+                SpotifyUri::Track { .. } => Some(Track {
+                    uri: uri.clone(),
+                    playlist_position: Some((u16::try_from(index + 1).unwrap_or(u16::MAX), total)),
+                }),
                 _ => None,
             })
             .collect()
@@ -259,6 +274,7 @@ impl TrackMetadata {
             artists: self.artists.iter().map(|a| a.name.clone()).collect(),
             album_title: self.album.name.clone(),
             album_cover: (self.image_retriever)().await,
+            track: None,
         };
         Ok(tags)
     }

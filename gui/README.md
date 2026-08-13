@@ -6,6 +6,8 @@ If a track load fails, the downloader pauses in place for five minutes before ea
 
 The status line counts each retry wait down once per second. While a download is active, the Download button becomes a red Cancel button and returns to Download when the process exits.
 
+Enable **Use playlist order as track #** to tag playlist items as `position/playlist length` in MP3 or FLAC metadata. The option is remembered between launches and does not alter standalone track or album numbering.
+
 ## Run from source
 
 ```powershell

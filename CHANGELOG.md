@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.8-gui] - 2026-08-13
+
+- Add optional `--playlist-track-numbers` tagging that writes each playlist item's 1-based position and playlist length to standard MP3/FLAC track fields.
+- Add a remembered GUI checkbox for playlist-order track numbering.
+
 ## [0.3.7-gui] - 2026-08-13
 
 - Reconnect the Spotify session and construct a fresh librespot player after every five-minute retry countdown instead of reusing a failed player instance.

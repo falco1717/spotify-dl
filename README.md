@@ -61,6 +61,14 @@ spotify-dl --logout
 
 Spotify credentials are cached under `~/.spotify-dl`. The application never accepts or stores a Spotify password directly.
 
+To write playlist positions into the standard track-number and total-tracks tags:
+
+```sh
+spotify-dl --playlist-track-numbers https://open.spotify.com/playlist/PLAYLIST_ID
+```
+
+This is opt-in and applies only to items expanded from playlists.
+
 ```
 spotify-dl 0.9.0
 A commandline utility to download music directly from Spotify
