@@ -26,7 +26,12 @@ try {
     dotnet build (Join-Path $PSScriptRoot 'Bundle\Bundle.wixproj') -c Release -p:MsiPath=$msiPath -p:GuiDir=$guiDirectory -o $installerDirectory
     if ($LASTEXITCODE -ne 0) { throw 'The installer bundle build failed.' }
 
-    Write-Host "Installer created at $(Join-Path $installerDirectory 'Spotify-DL-Setup.exe')"
+    $setupPath = Join-Path $installerDirectory 'Spotify-DL-Setup.exe'
+    $checksumPath = "$setupPath.sha256"
+    $checksum = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    [System.IO.File]::WriteAllText($checksumPath, "$checksum  Spotify-DL-Setup.exe`n", [System.Text.Encoding]::ASCII)
+    Write-Host "Installer created at $setupPath"
+    Write-Host "Checksum created at $checksumPath"
 }
 finally {
     Pop-Location

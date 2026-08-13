@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.10-gui] - 2026-08-13
+
+- Add automatic daily and manual GitHub Release update checks.
+- Show release notes and installer download progress in the application.
+- Verify downloaded installers with a published SHA-256 checksum before launch.
+- Allow users to skip a release and upgrade in place without clearing settings or Spotify credentials.
+
 ## [0.3.9-gui] - 2026-08-13
 
 - Add opt-in per-folder playlist sync history and a reset-history action.

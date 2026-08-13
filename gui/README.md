@@ -12,6 +12,8 @@ Enable **Playlist sync** to keep a `.spotify-dl-history.json` file in the select
 
 The speed selector offers **Normal** (one track at a time with a short listening-style pause), **Turbo (5)**, and a custom parallel-download count. Unavailable Spotify items appear as skipped and do not stop the playlist.
 
+The footer checks GitHub Releases for updates at most once per day and also provides a manual **Check updates** button. Available releases show their notes, download progress, and a skip option. Before launching an upgrade, the downloaded installer is verified against the release's `Spotify-DL-Setup.exe.sha256` asset. Settings, playlist history, downloads, and cached Spotify credentials remain in place during an upgrade.
+
 ## Run from source
 
 ```powershell

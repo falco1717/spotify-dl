@@ -26,10 +26,13 @@ public sealed class MainForm : Form
     private readonly Button resetHistoryButton = new();
     private readonly Button downloadButton = new();
     private readonly Button accountButton = new();
+    private readonly Button updateButton = new();
+    private readonly Button skipUpdateButton = new();
     private readonly RichTextBox outputBox = new();
     private readonly Label statusLabel = new();
     private readonly Label currentItemLabel = new();
     private readonly Label accountStatusLabel = new();
+    private readonly Label updateStatusLabel = new();
     private readonly ProgressBar itemProgress = new();
     private readonly System.Windows.Forms.Timer countdownTimer = new() { Interval = 1000 };
     private Process? activeProcess;
@@ -38,6 +41,8 @@ public sealed class MainForm : Form
     private bool cancellationRequested;
     private int countdownSeconds;
     private string countdownPrefix = "Waiting";
+    private UpdateRelease? availableUpdate;
+    private bool checkingForUpdates;
 
     public MainForm()
     {
@@ -54,7 +59,7 @@ public sealed class MainForm : Form
         BuildLayout();
         countdownTimer.Tick += (_, _) => { if (countdownSeconds > 0) countdownSeconds--; UpdateCountdown(); };
         LoadSettings();
-        Shown += async (_, _) => { await RefreshAuthStatusAsync(); urlBox.Focus(); };
+        Shown += async (_, _) => { await RefreshAuthStatusAsync(); await CheckForUpdatesAsync(false); urlBox.Focus(); };
         DragEnter += HandleDragEnter;
         DragDrop += HandleDragDrop;
         FormClosing += (_, _) => { SaveSettings(); if (activeProcess is { HasExited: false }) activeProcess.Kill(true); };
@@ -216,20 +221,37 @@ public sealed class MainForm : Form
 
     private Control BuildFooter()
     {
-        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, ColumnCount = 3, Padding = new Padding(0, 18, 0, 0) };
+        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, ColumnCount = 6, Padding = new Padding(0, 18, 0, 0) };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        footer.Controls.Add(new Label { Text = "Secure browser authentication", AutoSize = true, ForeColor = Color.FromArgb(87, 96, 91), Margin = new Padding(0, 10, 0, 0) }, 0, 0);
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        updateStatusLabel.Text = $"Version {UpdateService.CurrentVersion.ToString(3)}";
+        updateStatusLabel.AutoSize = true;
+        updateStatusLabel.ForeColor = Color.FromArgb(87, 96, 91);
+        updateStatusLabel.Margin = new Padding(0, 10, 12, 0);
+        footer.Controls.Add(updateStatusLabel, 0, 0);
+        StyleButton(skipUpdateButton, false);
+        skipUpdateButton.Text = "Skip";
+        skipUpdateButton.MinimumSize = new Size(66, 38);
+        skipUpdateButton.Visible = false;
+        skipUpdateButton.Click += (_, _) => SkipAvailableUpdate();
+        footer.Controls.Add(skipUpdateButton, 1, 0);
+        StyleButton(updateButton, false);
+        updateButton.Text = "Check updates";
+        updateButton.Click += async (_, _) => await CheckOrInstallUpdateAsync();
+        footer.Controls.Add(updateButton, 2, 0);
         accountStatusLabel.Text = "Checking Spotify login…";
         accountStatusLabel.AutoSize = true;
         accountStatusLabel.ForeColor = TextMuted;
         accountStatusLabel.Margin = new Padding(0, 10, 14, 0);
-        footer.Controls.Add(accountStatusLabel, 1, 0);
+        footer.Controls.Add(accountStatusLabel, 4, 0);
         StyleButton(accountButton, false);
         accountButton.Text = "Log in";
         accountButton.Click += async (_, _) => await ToggleAccountAsync();
-        footer.Controls.Add(accountButton, 2, 0);
+        footer.Controls.Add(accountButton, 5, 0);
         return footer;
     }
 
@@ -375,6 +397,90 @@ public sealed class MainForm : Form
         finally { SetRunning(false); }
     }
 
+    private async Task CheckOrInstallUpdateAsync()
+    {
+        if (availableUpdate is null) await CheckForUpdatesAsync(true);
+        if (availableUpdate is not null) await OfferUpdateAsync(availableUpdate);
+    }
+
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        if (checkingForUpdates || activeProcess is not null) return;
+        var state = LoadUpdateSettings();
+        if (!manual && DateTimeOffset.UtcNow - state.LastCheckedUtc < TimeSpan.FromDays(1)) return;
+        checkingForUpdates = true;
+        updateButton.Enabled = false;
+        updateButton.Text = "Checking…";
+        try
+        {
+            var release = await UpdateService.CheckAsync();
+            state = state with { LastCheckedUtc = DateTimeOffset.UtcNow };
+            SaveUpdateSettings(state);
+            if (release is not null && !string.Equals(state.SkippedVersion, release.Version.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                availableUpdate = release;
+                updateStatusLabel.Text = $"Update {release.Version} available";
+                updateStatusLabel.ForeColor = Primary;
+                updateButton.Text = "Update now";
+                skipUpdateButton.Visible = true;
+                if (manual) return;
+            }
+            else
+            {
+                updateStatusLabel.Text = $"Version {UpdateService.CurrentVersion.ToString(3)} — up to date";
+                updateStatusLabel.ForeColor = TextMuted;
+                updateButton.Text = "Check updates";
+                if (manual) MessageBox.Show(this, "Spotify DL is up to date.", "Software update", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            updateStatusLabel.Text = "Update check unavailable";
+            updateStatusLabel.ForeColor = TextMuted;
+            updateButton.Text = "Check updates";
+            if (manual) MessageBox.Show(this, $"Could not check for updates:\n{ex.Message}", "Software update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally { checkingForUpdates = false; updateButton.Enabled = activeProcess is null; }
+    }
+
+    private async Task OfferUpdateAsync(UpdateRelease release)
+    {
+        var notes = string.IsNullOrWhiteSpace(release.Notes) ? "No release notes were provided." : release.Notes;
+        if (notes.Length > 1800) notes = notes[..1800] + "…";
+        if (MessageBox.Show(this, $"Spotify DL {release.Version} is available.\n\n{notes}\n\nDownload and install it now?", "Update available", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes) return;
+        SetRunning(true);
+        updateStatusLabel.Text = "Downloading update…";
+        itemProgress.Value = 0;
+        try
+        {
+            var progress = new Progress<int>(value => { itemProgress.Value = Math.Clamp(value, 0, 100); updateStatusLabel.Text = $"Downloading update… {value}%"; });
+            var installer = await UpdateService.DownloadVerifiedInstallerAsync(release, progress);
+            updateStatusLabel.Text = "Verified — starting installer";
+            SaveSettings();
+            UpdateService.LaunchInstaller(installer);
+            Application.Exit();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"The update could not be installed:\n{ex.Message}", "Update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            updateStatusLabel.Text = $"Update {release.Version} available";
+        }
+        finally { if (!IsDisposed) SetRunning(false); }
+    }
+
+    private void SkipAvailableUpdate()
+    {
+        if (availableUpdate is null) return;
+        if (MessageBox.Show(this, $"Skip version {availableUpdate.Version}? You can still check manually later.", "Skip update", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+        var state = LoadUpdateSettings() with { SkippedVersion = availableUpdate.Version.ToString() };
+        SaveUpdateSettings(state);
+        availableUpdate = null;
+        skipUpdateButton.Visible = false;
+        updateButton.Text = "Check updates";
+        updateStatusLabel.Text = $"Version {UpdateService.CurrentVersion.ToString(3)}";
+        updateStatusLabel.ForeColor = TextMuted;
+    }
+
     private static ProcessStartInfo NewCliStartInfo(string executable) => new() { FileName = executable, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
     private void SetAuthState(bool loggedIn) { isLoggedIn = loggedIn; accountStatusLabel.Text = loggedIn ? "Signed in" : "Not signed in"; accountStatusLabel.ForeColor = loggedIn ? Primary : TextMuted; accountButton.Text = loggedIn ? "Log out" : "Log in"; accountButton.Enabled = activeProcess is null; }
     private static string? FindSpotifyDl()
@@ -387,7 +493,7 @@ public sealed class MainForm : Form
         return null;
     }
     private void CancelDownload() { if (activeProcess is not { HasExited: false }) return; cancellationRequested = true; StopCountdown(); downloadButton.Enabled = false; downloadButton.Text = "Cancelling…"; activeProcess.Kill(true); statusLabel.Text = "Cancelling…"; AppendOutput("CANCEL  Download stopping", Color.FromArgb(244, 180, 88)); }
-    private void SetRunning(bool running, bool cancellable = false) { isDownloadRunning = running && cancellable; downloadButton.Text = isDownloadRunning ? "Cancel" : "Download"; downloadButton.BackColor = isDownloadRunning ? Color.FromArgb(190, 65, 65) : Primary; downloadButton.ForeColor = isDownloadRunning ? Color.White : Color.FromArgb(7, 24, 13); downloadButton.Enabled = !running || cancellable; AcceptButton = running ? null : downloadButton; urlBox.Enabled = !running; destinationBox.Enabled = !running; browseButton.Enabled = !running; formatBox.Enabled = !running; speedBox.Enabled = !running; customParallelBox.Enabled = !running; playlistSyncBox.Enabled = !running; resetHistoryButton.Enabled = !running; playlistTrackNumbersBox.Enabled = !running; accountButton.Enabled = !running; }
+    private void SetRunning(bool running, bool cancellable = false) { isDownloadRunning = running && cancellable; downloadButton.Text = isDownloadRunning ? "Cancel" : "Download"; downloadButton.BackColor = isDownloadRunning ? Color.FromArgb(190, 65, 65) : Primary; downloadButton.ForeColor = isDownloadRunning ? Color.White : Color.FromArgb(7, 24, 13); downloadButton.Enabled = !running || cancellable; AcceptButton = running ? null : downloadButton; urlBox.Enabled = !running; destinationBox.Enabled = !running; browseButton.Enabled = !running; formatBox.Enabled = !running; speedBox.Enabled = !running; customParallelBox.Enabled = !running; playlistSyncBox.Enabled = !running; resetHistoryButton.Enabled = !running; playlistTrackNumbersBox.Enabled = !running; updateButton.Enabled = !running && !checkingForUpdates; skipUpdateButton.Enabled = !running; accountButton.Enabled = !running; }
     private void StartCountdown(int seconds, string prefix) { countdownSeconds = Math.Max(0, seconds); countdownPrefix = prefix; UpdateCountdown(); countdownTimer.Start(); }
     private static string FormatDuration(int seconds) => seconds % 60 == 0 ? $"{seconds / 60} minute{(seconds == 60 ? "" : "s")}" : $"{seconds} seconds";
     private void UpdateCountdown() { var minutes = countdownSeconds / 60; var seconds = countdownSeconds % 60; statusLabel.Text = countdownSeconds > 0 ? $"{countdownPrefix} {minutes}:{seconds:00}" : "Resuming…"; if (countdownSeconds <= 0) countdownTimer.Stop(); }
@@ -398,9 +504,13 @@ public sealed class MainForm : Form
     private void HandleDragEnter(object? sender, DragEventArgs e) { if (e.Data?.GetDataPresent(DataFormats.Text) == true) e.Effect = DragDropEffects.Copy; }
     private void HandleDragDrop(object? sender, DragEventArgs e) { if (e.Data?.GetData(DataFormats.Text) is string text) urlBox.Text = text.Trim(); }
     private static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpotifyDlGui", "settings.json");
+    private static string UpdateSettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SpotifyDlGui", "update-settings.json");
     private void LoadSettings() { try { if (!File.Exists(SettingsPath)) { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); return; } var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath)); destinationBox.Text = settings?.Destination ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); urlBox.Text = settings?.LastUrl ?? ""; if (settings?.Format is string format && formatBox.Items.Contains(format)) formatBox.SelectedItem = format; playlistTrackNumbersBox.Checked = settings?.PlaylistTrackNumbers ?? false; playlistSyncBox.Checked = settings?.PlaylistSync ?? false; speedBox.SelectedIndex = Math.Clamp(settings?.SpeedMode ?? 1, 0, 2); customParallelBox.Value = Math.Clamp(settings?.CustomParallel ?? 5, 1, 20); } catch { destinationBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic); } }
     private void SaveSettings() { try { Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new AppSettings(destinationBox.Text.Trim(), formatBox.SelectedItem?.ToString() ?? "flac", playlistTrackNumbersBox.Checked, urlBox.Text.Trim(), playlistSyncBox.Checked, speedBox.SelectedIndex, (int)customParallelBox.Value))); } catch { } }
     private sealed record AppSettings(string Destination, string Format, bool PlaylistTrackNumbers = false, string LastUrl = "", bool PlaylistSync = false, int SpeedMode = 1, int CustomParallel = 5);
+    private static UpdateSettings LoadUpdateSettings() { try { return File.Exists(UpdateSettingsPath) ? JsonSerializer.Deserialize<UpdateSettings>(File.ReadAllText(UpdateSettingsPath)) ?? new() : new(); } catch { return new(); } }
+    private static void SaveUpdateSettings(UpdateSettings settings) { try { Directory.CreateDirectory(Path.GetDirectoryName(UpdateSettingsPath)!); File.WriteAllText(UpdateSettingsPath, JsonSerializer.Serialize(settings)); } catch { } }
+    private sealed record UpdateSettings(DateTimeOffset LastCheckedUtc = default, string SkippedVersion = "");
 }
 
 internal sealed class RoundedPanel : TableLayoutPanel
