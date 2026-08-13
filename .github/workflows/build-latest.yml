@@ -51,3 +51,11 @@ jobs:
     - name: Build
       run: | 
         cargo build --verbose --release
+    - name: Build Windows installer
+      shell: powershell
+      run: installer/build-installer.ps1
+    - name: Upload Windows installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: Spotify-DL-Windows-Installer
+        path: artifacts/installer/Spotify-DL-Setup.exe

@@ -16,6 +16,12 @@ A command line utility to download songs, podcasts, playlists and albums directl
 
 ## ⚙️ Installation
 
+### Windows graphical installer
+
+Download `Spotify-DL-Setup.exe` from the Windows installer workflow artifact or build it locally with `installer/build-installer.ps1`. It installs the self-contained GUI and CLI under Program Files, adds a Start menu shortcut, and can be removed through Windows Installed Apps or Control Panel.
+
+The GUI source is maintained beside the CLI under [`gui/`](gui/README.md).
+
 You can install it using `cargo`, `homebrew`, from source or using a pre-built binary from the releases page.
 
 ### From crates.io using `cargo`
@@ -87,7 +93,7 @@ spotify-dl https://open.spotify.com/track/TRACK_ID
 - Download a playlist:
 
 ```
-spotify-dl -u YOUR_USER -p YOUR_PASS https://open.spotify.com/playlist/PLAYLIST_ID
+spotify-dl https://open.spotify.com/playlist/PLAYLIST_ID
 ```
 
 Save as MP3 to a custom folder:

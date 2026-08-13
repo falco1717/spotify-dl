@@ -1,0 +1,29 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Spotify DL"
+           Manufacturer="falco1717"
+           Version="0.3.0"
+           UpgradeCode="20A020D2-ABBF-4EDB-8EC0-6AA3A36E1C3F"
+           Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Spotify DL is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="SpotifyDlIcon.ico" SourceFile="$(var.GuiDir)\assets\spotify-dl.ico" />
+    <Property Id="ARPPRODUCTICON" Value="SpotifyDlIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/falco1717/spotify-dl" />
+    <Property Id="ARPCOMMENTS" Value="Spotify downloader with a native Windows interface." />
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Spotify DL">
+        <Component Id="MainExecutable" Bitness="always64">
+          <File Id="SpotifyDlGuiExe" Source="$(var.PayloadDir)\Spotify DL.exe" KeyPath="yes">
+            <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Spotify DL" Description="Download Spotify tracks with a graphical interface" WorkingDirectory="INSTALLFOLDER" Icon="SpotifyDlIcon.ico" Advertise="yes" />
+          </File>
+        </Component>
+        <Files Include="$(var.PayloadDir)\*.dll" />
+        <Files Include="$(var.PayloadDir)\*.pdb" />
+        <File Source="$(var.PayloadDir)\spotify-dl.exe" />
+        <Directory Id="AssetsFolder" Name="assets">
+          <File Source="$(var.PayloadDir)\assets\spotify-dl-logo.png" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+  </Package>
+</Wix>
