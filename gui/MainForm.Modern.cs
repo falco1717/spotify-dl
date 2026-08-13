@@ -259,7 +259,7 @@ public sealed class MainForm : Form
             case "ITEM_START" when fields.Length >= 2: currentItemLabel.Text = fields[1]; itemProgress.Value = 0; AppendOutput($"START   {fields[1]}", Color.FromArgb(126, 192, 255)); break;
             case "ITEM_PROGRESS" when fields.Length >= 3 && int.TryParse(fields[2], out var percent): itemProgress.Value = Math.Clamp(percent, 0, 100); if (percent == 100 || percent % 5 == 0) AppendOutput($"{percent,3}%    {fields[1]}", Color.FromArgb(164, 176, 169)); break;
             case "ITEM_STAGE" when fields.Length >= 3: AppendOutput($"{fields[2].ToUpperInvariant(),-7} {fields[1]}", Color.FromArgb(224, 190, 113)); break;
-            case "ITEM_RETRY" when fields.Length >= 4: AppendOutput($"RETRY   {fields[2]}/{fields[3]}  {fields[1]}", Color.FromArgb(244, 180, 88)); break;
+            case "ITEM_RETRY" when fields.Length >= 5: currentItemLabel.Text = fields[1]; itemProgress.Value = 0; statusLabel.Text = "Retrying in 3 minutes"; AppendOutput($"RETRY   {fields[2]}/{fields[3]} — waiting 3 minutes — {fields[1]}", Color.FromArgb(244, 180, 88)); break;
             case "ITEM_SKIP" when fields.Length >= 2: AppendOutput($"SKIP    {fields[1]}", TextMuted); break;
             case "ITEM_DONE" when fields.Length >= 2: itemProgress.Value = 100; AppendOutput($"DONE    {fields[1]}", Primary); break;
             case "ITEM_ERROR" when fields.Length >= 3: AppendOutput($"FAILED  {fields[1]} — {fields[2]}", Color.FromArgb(244, 112, 112)); break;

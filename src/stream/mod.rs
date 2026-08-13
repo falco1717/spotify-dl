@@ -14,6 +14,7 @@ pub enum StreamEvent {
     Retry {
         attempt: usize,
         max_attempts: usize,
+        delay_seconds: u64,
     },
     Error(StreamError),
 }

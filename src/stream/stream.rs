@@ -12,9 +12,21 @@ use crate::stream::channel_sink::{ChannelSink, SinkEvent};
 use crate::stream::{StreamError, StreamEvent, StreamEventChannel};
 use crate::track::Track;
 
+const RETRY_PAUSE: Duration = Duration::from_secs(3 * 60);
+
 pub struct Stream {
     player_config: PlayerConfig,
     session: Session,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RETRY_PAUSE;
+
+    #[test]
+    fn every_retry_waits_three_minutes() {
+        assert_eq!(RETRY_PAUSE.as_secs(), 180);
+    }
 }
 
 impl Stream {
@@ -60,13 +72,13 @@ impl Stream {
                             StreamEvent::Retry {
                                 attempt: attempt as usize,
                                 max_attempts: 3,
+                                delay_seconds: RETRY_PAUSE.as_secs(),
                             },
                         )
                         .await;
                     }
                 })
-                .exponential_backoff(Duration::from_secs(10))
-                .max_delay(Duration::from_secs(30))
+                .fixed_backoff(RETRY_PAUSE)
                 .await
             {
                 Ok(_) => tracing::info!("Track loaded successfully: {:?}", track.uri),

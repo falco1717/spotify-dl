@@ -261,6 +261,7 @@ impl Downloader {
                 StreamEvent::Retry {
                     attempt,
                     max_attempts,
+                    delay_seconds,
                 } => {
                     tracing::warn!(
                         "Retrying download, attempt {} of {}: {}",
@@ -269,7 +270,7 @@ impl Downloader {
                         metadata.to_string()
                     );
                     pb.set_message(format!(
-                        "Retrying ({}/{}) {}",
+                        "Waiting 3 minutes before retry ({}/{}) {}",
                         attempt,
                         max_attempts,
                         metadata.to_string()
@@ -281,6 +282,7 @@ impl Downloader {
                             metadata.to_string(),
                             attempt.to_string(),
                             max_attempts.to_string(),
+                            delay_seconds.to_string(),
                         ],
                     );
                 }

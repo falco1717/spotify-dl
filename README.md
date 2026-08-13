@@ -14,6 +14,7 @@ A command line utility to download songs, podcasts, playlists and albums directl
 - Built with Rust for speed and efficiency.
 - Supports metadata tagging and organized file output.
 - Downloads large playlists and albums in groups of 28 tracks, pausing for three minutes between groups.
+- Waits three minutes before every retry after a track load failure.
 
 ## ⚙️ Installation
 

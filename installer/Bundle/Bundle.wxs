@@ -1,5 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
-  <Bundle Name="Spotify DL" Manufacturer="falco1717" Version="0.3.1" UpgradeCode="08D5B8EB-A7EC-4DF5-95F0-BE80961975B5" IconSourceFile="$(var.GuiDir)\assets\spotify-dl.ico" AboutUrl="https://github.com/falco1717/spotify-dl" DisableModify="yes">
+  <Bundle Name="Spotify DL" Manufacturer="falco1717" Version="0.3.2" UpgradeCode="08D5B8EB-A7EC-4DF5-95F0-BE80961975B5" IconSourceFile="$(var.GuiDir)\assets\spotify-dl.ico" AboutUrl="https://github.com/falco1717/spotify-dl" DisableModify="yes">
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl="" SuppressOptionsUI="yes" />
     </BootstrapperApplication>

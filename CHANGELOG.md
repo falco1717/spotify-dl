@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.2-gui] - 2026-08-13
+
+- Replace short exponential track-load retry delays with a fixed three-minute pause before every retry.
+- Show the retry cooldown explicitly in the Windows GUI activity feed.
+
 ## [0.3.1-gui] - 2026-08-13
 
 - Download large queues in batches of 28 tracks with a three-minute cooldown between batches.

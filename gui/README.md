@@ -4,6 +4,8 @@ A native Windows frontend for this fork of `spotify-dl`. It provides browser-bas
 
 Large playlists and albums download in groups of 28 tracks with a three-minute cooldown between groups. The activity feed reports each pause and resume.
 
+If a track load fails, the downloader pauses in place for three minutes before each retry and reports the wait in the activity feed.
+
 ## Run from source
 
 ```powershell
