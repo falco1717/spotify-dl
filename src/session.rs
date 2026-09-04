@@ -69,6 +69,10 @@ fn remove_credentials_file(path: &Path) -> Result<bool> {
 
 pub fn load_credentials() -> Result<Credentials> {
     let token = OAuthClientBuilder::new(SPOTIFY_CLIENT_ID, SPOTIFY_REDIRECT_URI, vec!["streaming"])
+        .open_in_browser()
+        .with_custom_message(
+            "<html><body style=\"font-family:Segoe UI,sans-serif;background:#101316;color:#f2f6f3;padding:48px\"><h1>Spotify DL is connected</h1><p>You can close this tab and return to Spotify DL.</p></body></html>",
+        )
         .build()?
         .get_access_token()?;
     Ok(Credentials::with_access_token(token.access_token))

@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.12-gui] - 2026-09-03
+
+- Fix the GUI login flow by opening the generated Spotify OAuth authorization URL in the default browser.
+- Show a clear browser confirmation page after Spotify redirects back to the application.
+- Increase dark-mode checkbox-label contrast by using the primary white text color.
+
 ## [0.3.11-gui] - 2026-08-13
 
 - Publish a maintenance release for validating the new in-application update flow.

@@ -2,6 +2,8 @@
 
 A native Windows frontend for this fork of `spotify-dl`. It provides browser-based Spotify login, URL and destination fields, format selection, cancellation, and per-item download progress without requiring command-line use.
 
+The **Log in** button opens the generated Spotify OAuth authorization page in the default browser. Keep Spotify DL open until the browser confirms that it is connected; credentials are then cached by the CLI for later sessions.
+
 If a track load fails, the downloader pauses in place for five minutes before each retry and reports the wait in the activity feed.
 
 The status line counts each retry wait down once per second. While a download is active, the Download button becomes a red Cancel button and returns to Download when the process exits.

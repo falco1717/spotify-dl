@@ -157,12 +157,12 @@ public sealed class MainForm : Form
         customParallelBox.Visible = false;
         playlistTrackNumbersBox.Text = "Use playlist order as track #";
         playlistTrackNumbersBox.AutoSize = true;
-        playlistTrackNumbersBox.ForeColor = TextMuted;
+        playlistTrackNumbersBox.ForeColor = TextPrimary;
         playlistTrackNumbersBox.Font = new Font("Segoe UI", 9.5F);
         playlistTrackNumbersBox.Margin = new Padding(0, 10, 16, 0);
         playlistSyncBox.Text = "Playlist sync";
         playlistSyncBox.AutoSize = true;
-        playlistSyncBox.ForeColor = TextMuted;
+        playlistSyncBox.ForeColor = TextPrimary;
         playlistSyncBox.Font = new Font("Segoe UI", 9.5F);
         playlistSyncBox.Margin = new Padding(0, 10, 12, 0);
         StyleButton(resetHistoryButton, false);
@@ -342,7 +342,7 @@ public sealed class MainForm : Form
 
     private async Task RefreshAuthStatusAsync() { var result = await RunAuthCommandAsync("--auth-status", "Checking login…", false); SetAuthState(result?.Contains("AUTH_STATUS=logged_in", StringComparison.Ordinal) == true); }
     private async Task ToggleAccountAsync() { if (isLoggedIn) await LogoutAsync(); else await LoginAsync(); }
-    private async Task LoginAsync() { outputBox.Clear(); var result = await RunAuthCommandAsync("--login", "Complete login in your browser…", true); SetAuthState(result?.Contains("AUTH_STATUS=logged_in", StringComparison.Ordinal) == true); }
+    private async Task LoginAsync() { outputBox.Clear(); AppendOutput("LOGIN   Opening Spotify's secure sign-in page in your default browser…", TextPrimary); var result = await RunAuthCommandAsync("--login", "Complete login in your browser…", true); var loggedIn = result?.Contains("AUTH_STATUS=logged_in", StringComparison.Ordinal) == true; SetAuthState(loggedIn); if (!loggedIn) AppendOutput("LOGIN   Sign-in did not complete. Try again and keep Spotify DL open until the browser confirms the connection.", Color.FromArgb(244, 180, 88)); }
     private async Task LogoutAsync()
     {
         if (MessageBox.Show(this, "Log out of Spotify on this computer? Downloaded files and settings will remain.", "Log out of Spotify", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
